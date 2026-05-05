@@ -1,5 +1,5 @@
 {
-  "id": "repo_profile_325d5dc6-b8f8-4e40-9a2a-1d78034029e7",
+  "id": "repo_profile_e84ef7b2-ad7a-4d4b-8e58-2d4f9b2afc73",
   "repoId": "local",
   "version": 1,
   "owner": "Open-Maintainer",
@@ -314,6 +314,7 @@
     "OPEN_MAINTAINER_GIT_COMMAND",
     "OPEN_MAINTAINER_LOCAL_REPO_CACHE",
     "OPEN_MAINTAINER_NO_COLOR",
+    "OPEN_MAINTAINER_REMOTE_ARTIFACT_ROOT",
     "OPEN_MAINTAINER_REVIEW_SUMMARY_MARKER",
     "PATH",
     "READINESS_SCORE",
@@ -396,6 +397,7 @@
     "tests/fixtures/with-context/package.json",
     "tests/helpers/cli.ts",
     "tests/helpers/fake-model-cli.ts",
+    "tests/helpers/git-url.ts",
     "tests/issue-triage-use-cases.test.ts",
     "tests/mvp-golden.test.ts",
     "tests/smoke/compose-smoke.ts",
@@ -949,6 +951,10 @@
       "reason": "detected repository context"
     },
     {
+      "path": "tests/helpers/git-url.ts",
+      "reason": "detected repository context"
+    },
+    {
       "path": "tests/issue-triage-use-cases.test.ts",
       "reason": "detected repository context"
     },
@@ -1081,11 +1087,11 @@
     },
     {
       "path": ".open-maintainer/profile.json",
-      "hash": "3a5acd292061a6ee"
+      "hash": "5c7ebe0e379472e8"
     },
     {
       "path": ".open-maintainer/report.md",
-      "hash": "ccc93c4ea140f416"
+      "hash": "99bcba5beb24fdc1"
     },
     {
       "path": "AGENTS.md",
@@ -1313,7 +1319,7 @@
     },
     {
       "path": "README.md",
-      "hash": "4fd6af35d6210d29"
+      "hash": "591efedaec7b077c"
     },
     {
       "path": "SECURITY.md",
@@ -1325,7 +1331,7 @@
     },
     {
       "path": "tests/cli-audit.test.ts",
-      "hash": "d606048db52697ab"
+      "hash": "b606906bd0eea321"
     },
     {
       "path": "tests/cli-doctor.test.ts",
@@ -1333,11 +1339,11 @@
     },
     {
       "path": "tests/cli-help.test.ts",
-      "hash": "777e3f9d9e881c3f"
+      "hash": "e9b561c3cbeca831"
     },
     {
       "path": "tests/cli-repository-workspace.test.ts",
-      "hash": "b1826a11a5053874"
+      "hash": "214437cc1db9b09a"
     },
     {
       "path": "tests/cli-review-operation.test.ts",
@@ -1345,11 +1351,11 @@
     },
     {
       "path": "tests/cli-review.test.ts",
-      "hash": "8c8e602c0dd8b5d3"
+      "hash": "79b2df87ab6295b9"
     },
     {
       "path": "tests/cli-triage.test.ts",
-      "hash": "cf666c3d6e72a9d8"
+      "hash": "748ccaabd2fa9483"
     },
     {
       "path": "tests/dashboard-contracts.test.ts",
@@ -1504,6 +1510,10 @@
       "hash": "aa19aecdaa260578"
     },
     {
+      "path": "tests/helpers/git-url.ts",
+      "hash": "c8b37e06d2905b91"
+    },
+    {
       "path": "tests/issue-triage-use-cases.test.ts",
       "hash": "7c2c9dd708a1e28b"
     },
@@ -1545,7 +1555,7 @@
     }
   ],
   "contextArtifactHashes": [],
-  "createdAt": "2026-05-05T00:48:25.491Z",
+  "createdAt": "2026-05-05T06:26:00.461Z",
   "agentReadiness": {
     "score": 100,
     "categories": [
@@ -2120,6 +2130,10 @@
             "reason": "detected repository context"
           },
           {
+            "path": "tests/helpers/git-url.ts",
+            "reason": "detected repository context"
+          },
+          {
             "path": "tests/issue-triage-use-cases.test.ts",
             "reason": "detected repository context"
           },
@@ -2492,6 +2506,10 @@
             "reason": "detected repository context"
           },
           {
+            "path": "tests/helpers/git-url.ts",
+            "reason": "detected repository context"
+          },
+          {
             "path": "tests/issue-triage-use-cases.test.ts",
             "reason": "detected repository context"
           },
@@ -2859,7 +2877,7 @@
       }
     ],
     "missingItems": [],
-    "generatedAt": "2026-05-05T00:48:25.492Z"
+    "generatedAt": "2026-05-05T06:26:00.462Z"
   },
-  "openMaintainerProfileHash": "bbd1ac79d60841ba"
+  "openMaintainerProfileHash": "9665fb6a2b853b3f"
 }

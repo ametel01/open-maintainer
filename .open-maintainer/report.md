@@ -150,6 +150,7 @@ Agent Readiness: 100/100
 - Evidence: tests/fixtures/with-context/package.json (detected repository context)
 - Evidence: tests/helpers/cli.ts (detected repository context)
 - Evidence: tests/helpers/fake-model-cli.ts (detected repository context)
+- Evidence: tests/helpers/git-url.ts (detected repository context)
 - Evidence: tests/issue-triage-use-cases.test.ts (detected repository context)
 - Evidence: tests/mvp-golden.test.ts (detected repository context)
 - Evidence: tests/smoke/compose-smoke.ts (detected repository context)
@@ -245,6 +246,7 @@ Agent Readiness: 100/100
 - Evidence: tests/fixtures/with-context/package.json (detected repository context)
 - Evidence: tests/helpers/cli.ts (detected repository context)
 - Evidence: tests/helpers/fake-model-cli.ts (detected repository context)
+- Evidence: tests/helpers/git-url.ts (detected repository context)
 - Evidence: tests/issue-triage-use-cases.test.ts (detected repository context)
 - Evidence: tests/mvp-golden.test.ts (detected repository context)
 - Evidence: tests/smoke/compose-smoke.ts (detected repository context)
@@ -346,6 +348,10 @@ Agent Readiness: 100/100
 - Evidence: .open-maintainer/profile.json (detected repository context)
 - Evidence: .open-maintainer/report.md (detected repository context)
 - Evidence: AGENTS.md (detected repository context)
+
+## Drift
+
+- Documentation: README.md was changed. Evidence: README.md. Next action: review generated context against the changed docs.
 
 ## Commands
 
