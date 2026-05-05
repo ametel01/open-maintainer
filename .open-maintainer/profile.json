@@ -1,5 +1,5 @@
 {
-  "id": "repo_profile_e84ef7b2-ad7a-4d4b-8e58-2d4f9b2afc73",
+  "id": "repo_profile_2b0fc3d5-a1f2-4d5e-a965-22eea9cb537a",
   "repoId": "local",
   "version": 1,
   "owner": "Open-Maintainer",
@@ -1087,11 +1087,11 @@
     },
     {
       "path": ".open-maintainer/profile.json",
-      "hash": "5c7ebe0e379472e8"
+      "hash": "a12ac6508c53e60a"
     },
     {
       "path": ".open-maintainer/report.md",
-      "hash": "99bcba5beb24fdc1"
+      "hash": "7529f2440b1df24f"
     },
     {
       "path": "AGENTS.md",
@@ -1107,15 +1107,15 @@
     },
     {
       "path": "apps/api/tests/context-pr-service.test.ts",
-      "hash": "18bdf116e103489e"
+      "hash": "0b96c6edddf7d557"
     },
     {
       "path": "apps/api/tests/repository-source-analysis.test.ts",
-      "hash": "0a406b27e447d3f3"
+      "hash": "96d9bd7f8755642e"
     },
     {
       "path": "apps/api/tests/review-service.test.ts",
-      "hash": "26cccf56859f6c91"
+      "hash": "05ebd9555ecc81e9"
     },
     {
       "path": "apps/api/tsconfig.json",
@@ -1555,7 +1555,7 @@
     }
   ],
   "contextArtifactHashes": [],
-  "createdAt": "2026-05-05T06:26:00.461Z",
+  "createdAt": "2026-05-05T07:09:03.515Z",
   "agentReadiness": {
     "score": 100,
     "categories": [
@@ -2877,7 +2877,7 @@
       }
     ],
     "missingItems": [],
-    "generatedAt": "2026-05-05T06:26:00.462Z"
+    "generatedAt": "2026-05-05T07:09:03.516Z"
   },
-  "openMaintainerProfileHash": "9665fb6a2b853b3f"
+  "openMaintainerProfileHash": "eeeba5873affcf5d"
 }

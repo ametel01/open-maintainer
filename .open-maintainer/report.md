@@ -349,10 +349,6 @@ Agent Readiness: 100/100
 - Evidence: .open-maintainer/report.md (detected repository context)
 - Evidence: AGENTS.md (detected repository context)
 
-## Drift
-
-- Documentation: README.md was changed. Evidence: README.md. Next action: review generated context against the changed docs.
-
 ## Commands
 
 - dev: cd apps/api && bun --watch src/server.ts (apps/api/package.json)
