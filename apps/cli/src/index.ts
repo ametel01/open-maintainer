@@ -51,6 +51,12 @@ import {
   createCliIssueTriageAdapters,
   createIssueTriageUseCases,
 } from "./issue-triage-use-cases";
+import {
+  type CliRepositoryReference,
+  type PersistedRepositoryArtifacts,
+  persistRepositoryReferenceArtifacts,
+  resolveCliRepositoryReference,
+} from "./repository-reference";
 import { createCliRepositoryWorkspace } from "./repository-workspace";
 import {
   type ReviewOperationModelProvider,
@@ -131,6 +137,9 @@ Help:
   open-maintainer help <command>
   open-maintainer <command> --help
   open-maintainer <command> help
+
+Repository arguments:
+  <repo> is a local worktree path. audit, review, and triage issue/issues also accept https://github.com/OWNER/REPO URLs; URL-backed artifacts are copied under .open-maintainer/url-repos/OWNER/REPO before the temporary checkout is removed.
 `;
 
 const commandUsages = {
@@ -150,6 +159,7 @@ Options:
 
 Examples:
   open-maintainer audit .
+  open-maintainer audit https://github.com/OWNER/REPO
   open-maintainer audit ./repo --fail-on-score-below 60
   open-maintainer audit ./repo --dry-run
   open-maintainer audit ./repo --report-path .open-maintainer/report.md --no-profile-write
@@ -253,6 +263,7 @@ Examples:
   open-maintainer review . --base-ref main --head-ref HEAD --json
   open-maintainer review . --base-ref main --head-ref HEAD --model codex --allow-model-content-transfer
   open-maintainer review . --pr 123 --model codex --allow-model-content-transfer
+  open-maintainer review https://github.com/OWNER/REPO --pr 123 --model codex --allow-model-content-transfer --dry-run
   open-maintainer review . --pr 123 --model claude --allow-model-content-transfer --dry-run
 `,
   triage: `open-maintainer triage issue <repo> --number <n>
@@ -306,6 +317,8 @@ Output:
 Examples:
   open-maintainer triage issue . --number 82 --model codex --allow-model-content-transfer
   open-maintainer triage issues . --state open --limit 5 --model codex --allow-model-content-transfer
+  open-maintainer triage issue https://github.com/OWNER/REPO --number 82 --model codex --allow-model-content-transfer --dry-run
+  open-maintainer triage issues https://github.com/OWNER/REPO --limit 5 --model codex --allow-model-content-transfer --dry-run
   open-maintainer triage brief . --number 82
   open-maintainer triage issue . --number 82 --model claude --allow-model-content-transfer
 `,
@@ -586,17 +599,24 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       console.error(commandUsages.triage);
       return 2;
     }
-    const repoRoot = path.resolve(repoArg);
     try {
       const options = parseOptions(rawOptions);
-      if (subcommand === "issue") {
-        await triageIssue(repoRoot, options);
-      } else if (subcommand === "issues") {
-        await triageIssues(repoRoot, options);
-      } else {
-        await triageBrief(repoRoot, options);
-      }
-      return 0;
+      assertTriageOptionsBeforeRepository(subcommand, options);
+      return await runWithRepositoryReference({
+        repoArg,
+        command: "triage",
+        options,
+        async run(repoRoot) {
+          if (subcommand === "issue") {
+            await triageIssue(repoRoot, options);
+          } else if (subcommand === "issues") {
+            await triageIssues(repoRoot, options);
+          } else {
+            await triageBrief(repoRoot, options);
+          }
+          return 0;
+        },
+      });
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error));
       return 1;
@@ -610,17 +630,37 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     return 2;
   }
 
-  const repoRoot = path.resolve(repoArg);
   try {
     const options = parseOptions(rawOptions);
+    if (command === "audit") {
+      return await runWithRepositoryReference({
+        repoArg,
+        command: "audit",
+        options,
+        async run(repoRoot) {
+          const { profile, reportPath } = await audit(repoRoot, options);
+          printLines(
+            renderAuditSummary({ repoRoot, profile, reportPath, options }),
+          );
+          return thresholdExit(profile.agentReadiness.score, options);
+        },
+      });
+    }
+    if (command === "review") {
+      assertReviewOptions(options);
+      return await runWithRepositoryReference({
+        repoArg,
+        command: "review",
+        options,
+        async run(repoRoot) {
+          await review(repoRoot, options);
+          return 0;
+        },
+      });
+    }
+
+    const repoRoot = path.resolve(repoArg);
     switch (command) {
-      case "audit": {
-        const { profile, reportPath } = await audit(repoRoot, options);
-        printLines(
-          renderAuditSummary({ repoRoot, profile, reportPath, options }),
-        );
-        return thresholdExit(profile.agentReadiness.score, options);
-      }
       case "generate":
         await generate(repoRoot, options);
         return 0;
@@ -705,9 +745,6 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         }
         return result.ok ? 0 : 1;
       }
-      case "review":
-        await review(repoRoot, options);
-        return 0;
       case "pr":
         await pr(repoRoot, options);
         return 0;
@@ -718,6 +755,106 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     return 1;
+  }
+}
+
+async function runWithRepositoryReference(input: {
+  repoArg: string;
+  command: "audit" | "review" | "triage";
+  options: CliOptions;
+  run(repoRoot: string, reference: CliRepositoryReference): Promise<number>;
+}): Promise<number> {
+  const reference = await resolveCliRepositoryReference(input.repoArg);
+  let artifactNotice: PersistedRepositoryArtifacts | null = null;
+  let completed = false;
+  try {
+    const exitCode = await input.run(reference.repoRoot, reference);
+    artifactNotice = input.options.dryRun
+      ? null
+      : await persistRepositoryReferenceArtifacts(
+          reference,
+          artifactPathsForRepositoryReference(input.command, input.options),
+        );
+    completed = true;
+    return exitCode;
+  } finally {
+    await reference.cleanup();
+    if (completed) {
+      printRepositoryReferenceNotice(reference, artifactNotice, input.options);
+    }
+  }
+}
+
+function artifactPathsForRepositoryReference(
+  command: "audit" | "review" | "triage",
+  options: CliOptions,
+): string[] {
+  const paths = new Set([".open-maintainer"]);
+  if (command === "audit" && options.reportPath) {
+    paths.add(options.reportPath);
+  }
+  if ((command === "review" || command === "triage") && options.outputPath) {
+    paths.add(options.outputPath);
+  }
+  return [...paths];
+}
+
+function printRepositoryReferenceNotice(
+  reference: CliRepositoryReference,
+  artifacts: PersistedRepositoryArtifacts | null,
+  options: CliOptions,
+): void {
+  if (reference.kind !== "github-url") {
+    return;
+  }
+  const lines = [
+    `Source: ${reference.url}`,
+    `Temporary checkout: ${reference.repoRoot} (removed)`,
+    ...(options.dryRun
+      ? ["Artifacts: none written because this was a dry run"]
+      : artifacts && artifacts.copiedPaths.length > 0
+        ? [
+            `Artifacts copied to: ${formatDisplayPath(artifacts.artifactRoot)}`,
+            ...artifacts.copiedPaths.map((artifactPath) => `- ${artifactPath}`),
+          ]
+        : [
+            "Artifacts copied: none; no relative artifacts were written by this command",
+          ]),
+  ];
+  const output = renderBox("GitHub URL workspace", lines).join("\n");
+  if (options.json) {
+    console.error(output);
+    return;
+  }
+  console.log(output);
+}
+
+function formatDisplayPath(value: string): string {
+  const relative = path.relative(process.cwd(), value);
+  return relative && !relative.startsWith("..") && !path.isAbsolute(relative)
+    ? relative
+    : value;
+}
+
+function assertTriageOptionsBeforeRepository(
+  subcommand: "issue" | "issues" | "brief",
+  options: CliOptions,
+): void {
+  if (subcommand === "brief") {
+    return;
+  }
+  if (options.issueCreateLabels && !options.issueApplyLabels) {
+    throw new Error("--create-labels requires --apply-labels.");
+  }
+  if (!options.model) {
+    throw new Error(
+      "triage issue requires --model codex or --model claude because issue triage is LLM-backed only.",
+    );
+  }
+  if (!options.allowModelContentTransfer) {
+    throw new Error(
+      "--model requires --allow-model-content-transfer because issue triage sends repository context and issue content to the selected CLI backend.",
+    );
   }
 }
 
@@ -1737,32 +1874,7 @@ function formatCommentActionSummary(
 }
 
 async function review(repoRoot: string, options: CliOptions): Promise<void> {
-  if (
-    (options.reviewPostSummary ||
-      options.reviewInlineComments ||
-      options.reviewApplyTriageLabel ||
-      options.reviewCreateTriageLabels) &&
-    options.pr === null
-  ) {
-    throw new Error(
-      "Review GitHub write flags require --pr <number> so the CLI can target a GitHub pull request with gh.",
-    );
-  }
-  if (options.reviewCreateTriageLabels && !options.reviewApplyTriageLabel) {
-    throw new Error(
-      "--review-create-triage-labels requires --review-apply-triage-label.",
-    );
-  }
-  if (
-    options.reviewInlineCap !== null &&
-    !options.reviewInlineComments &&
-    options.pr === null
-  ) {
-    throw new Error(
-      "--review-inline-cap requires --review-inline-comments or --pr.",
-    );
-  }
-  assertReviewModelOptions(options);
+  assertReviewOptions(options);
 
   const provider = resolveRequiredReviewProvider(options);
   const reviewModel = resolveReviewModel(options);
@@ -1841,6 +1953,35 @@ async function review(repoRoot: string, options: CliOptions): Promise<void> {
       formatPullRequestPublicationStatus(run.publication),
     ]),
   );
+}
+
+function assertReviewOptions(options: CliOptions): void {
+  if (
+    (options.reviewPostSummary ||
+      options.reviewInlineComments ||
+      options.reviewApplyTriageLabel ||
+      options.reviewCreateTriageLabels) &&
+    options.pr === null
+  ) {
+    throw new Error(
+      "Review GitHub write flags require --pr <number> so the CLI can target a GitHub pull request with gh.",
+    );
+  }
+  if (options.reviewCreateTriageLabels && !options.reviewApplyTriageLabel) {
+    throw new Error(
+      "--review-create-triage-labels requires --review-apply-triage-label.",
+    );
+  }
+  if (
+    options.reviewInlineCap !== null &&
+    !options.reviewInlineComments &&
+    options.pr === null
+  ) {
+    throw new Error(
+      "--review-inline-cap requires --review-inline-comments or --pr.",
+    );
+  }
+  assertReviewModelOptions(options);
 }
 
 function buildReviewPublishOptions(options: CliOptions): ReviewPublishOptions {

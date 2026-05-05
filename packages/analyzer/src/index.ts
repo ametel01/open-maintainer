@@ -43,6 +43,13 @@ export type RepositoryIdentity = {
   version?: number;
 };
 
+export type GitHubRepositoryUrlReference = {
+  owner: string;
+  name: string;
+  htmlUrl: string;
+  cloneUrl: string;
+};
+
 export type RepositoryProfilePurpose =
   | "workspace"
   | "context"
@@ -570,7 +577,11 @@ async function defaultRepositoryWorkspaceGitOutput(
   args: readonly string[],
 ): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync("git", ["-C", repoRoot, ...args]);
+    const gitArgs =
+      args.join(" ") === "remote get-url origin"
+        ? ["-C", repoRoot, "config", "--get", "remote.origin.url"]
+        : ["-C", repoRoot, ...args];
+    const { stdout } = await execFileAsync("git", gitArgs);
     return stdout.trim() || null;
   } catch {
     return null;
@@ -585,6 +596,10 @@ function parseRepositoryWorkspaceGitHubRemote(
   if (sshMatch?.[1] && sshMatch[2]) {
     return { owner: sshMatch[1], name: sshMatch[2] };
   }
+  const githubUrl = parseGitHubRepositoryUrl(remoteUrl);
+  if (githubUrl) {
+    return { owner: githubUrl.owner, name: githubUrl.name };
+  }
   try {
     const url = new URL(normalized);
     const [owner, name] = url.pathname.replace(/^\/+/, "").split("/");
@@ -592,6 +607,41 @@ function parseRepositoryWorkspaceGitHubRemote(
   } catch {
     return null;
   }
+}
+
+export function parseGitHubRepositoryUrl(
+  value: string,
+): GitHubRepositoryUrlReference | null {
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    return null;
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.hostname.toLowerCase() !== "github.com"
+  ) {
+    return null;
+  }
+  const parts = url.pathname
+    .replace(/^\/+|\/+$/g, "")
+    .split("/")
+    .filter(Boolean);
+  if (parts.length !== 2) {
+    return null;
+  }
+  const [owner, rawName] = parts;
+  const name = rawName?.replace(/\.git$/i, "");
+  if (!owner || !name || name.length === 0) {
+    return null;
+  }
+  return {
+    owner,
+    name,
+    htmlUrl: `https://github.com/${owner}/${name}`,
+    cloneUrl: `https://github.com/${owner}/${name}.git`,
+  };
 }
 
 async function listGitVisibleFiles(repoRoot: string): Promise<string[] | null> {
