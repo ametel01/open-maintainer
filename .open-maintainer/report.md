@@ -112,6 +112,7 @@ Agent Readiness: 100/100
 - Evidence: packages/review/tests/prompt-context.test.ts (detected repository context)
 - Evidence: packages/review/tests/render.test.ts (detected repository context)
 - Evidence: packages/review/tests/workflow.test.ts (detected repository context)
+- Evidence: packages/shared/tests/repository-ignore.test.ts (detected repository context)
 - Evidence: packages/shared/tests/schemas.test.ts (detected repository context)
 - Evidence: packages/triage/tests/index.test.ts (detected repository context)
 - Evidence: tests/action-mvp.test.ts (detected repository context)
@@ -208,6 +209,7 @@ Agent Readiness: 100/100
 - Evidence: packages/review/tests/prompt-context.test.ts (detected repository context)
 - Evidence: packages/review/tests/render.test.ts (detected repository context)
 - Evidence: packages/review/tests/workflow.test.ts (detected repository context)
+- Evidence: packages/shared/tests/repository-ignore.test.ts (detected repository context)
 - Evidence: packages/shared/tests/schemas.test.ts (detected repository context)
 - Evidence: packages/triage/tests/index.test.ts (detected repository context)
 - Evidence: tests/action-mvp.test.ts (detected repository context)
@@ -348,6 +350,11 @@ Agent Readiness: 100/100
 - Evidence: .open-maintainer/profile.json (detected repository context)
 - Evidence: .open-maintainer/report.md (detected repository context)
 - Evidence: AGENTS.md (detected repository context)
+
+## Drift
+
+- Documentation: docs/DEMO_RUNBOOK.md was changed. Evidence: docs/DEMO_RUNBOOK.md. Next action: review generated context against the changed docs.
+- Documentation: README.md was changed. Evidence: README.md. Next action: review generated context against the changed docs.
 
 ## Commands
 

@@ -1,5 +1,5 @@
 {
-  "id": "repo_profile_c0c886e8-b354-4094-b20b-828f6ae545ec",
+  "id": "repo_profile_42614ab4-ffef-4deb-add9-a976d7c4e7e6",
   "repoId": "local",
   "version": 1,
   "owner": "Open-Maintainer",
@@ -349,6 +349,7 @@
     "packages/review/tests/render.test.ts",
     "packages/review/tests/workflow.test.ts",
     "packages/shared/tests/artifact-registry.test.ts",
+    "packages/shared/tests/repository-ignore.test.ts",
     "packages/shared/tests/schemas.test.ts",
     "packages/triage/tests/index.test.ts",
     "tests/action-mvp.test.ts",
@@ -799,6 +800,10 @@
       "reason": "detected repository context"
     },
     {
+      "path": "packages/shared/tests/repository-ignore.test.ts",
+      "reason": "detected repository context"
+    },
+    {
       "path": "packages/shared/tests/schemas.test.ts",
       "reason": "detected repository context"
     },
@@ -1087,7 +1092,7 @@
     },
     {
       "path": ".open-maintainer/profile.json",
-      "hash": "61c9c3958bcaad91"
+      "hash": "4bb4cfef4b725dcb"
     },
     {
       "path": ".open-maintainer/report.md",
@@ -1167,7 +1172,7 @@
     },
     {
       "path": "docs/DEMO_RUNBOOK.md",
-      "hash": "0759c8d884f38caf"
+      "hash": "86044fd6804ef7f7"
     },
     {
       "path": "docs/MVP_RELEASE_REVIEW.md",
@@ -1203,7 +1208,7 @@
     },
     {
       "path": "packages/analyzer/tests/analyzer.test.ts",
-      "hash": "42e04daf79c296a0"
+      "hash": "f9f2cff0eac4f70d"
     },
     {
       "path": "packages/analyzer/tsconfig.json",
@@ -1215,7 +1220,7 @@
     },
     {
       "path": "packages/config/tests/config.test.ts",
-      "hash": "d62455b99a49f9a3"
+      "hash": "bf66ca827d77da4e"
     },
     {
       "path": "packages/config/tsconfig.json",
@@ -1263,7 +1268,7 @@
     },
     {
       "path": "packages/review/tests/local-git.test.ts",
-      "hash": "1a4a0489946e176e"
+      "hash": "a01ba8dbb7147a66"
     },
     {
       "path": "packages/review/tests/model.test.ts",
@@ -1279,7 +1284,7 @@
     },
     {
       "path": "packages/review/tests/render.test.ts",
-      "hash": "ac2618c58d17aa08"
+      "hash": "08599e18afb738d3"
     },
     {
       "path": "packages/review/tests/workflow.test.ts",
@@ -1296,6 +1301,10 @@
     {
       "path": "packages/shared/tests/artifact-registry.test.ts",
       "hash": "aa02276f1d8a2971"
+    },
+    {
+      "path": "packages/shared/tests/repository-ignore.test.ts",
+      "hash": "9ff1483fe4c43bec"
     },
     {
       "path": "packages/shared/tests/schemas.test.ts",
@@ -1319,7 +1328,7 @@
     },
     {
       "path": "README.md",
-      "hash": "591efedaec7b077c"
+      "hash": "b95c298e240419ab"
     },
     {
       "path": "SECURITY.md",
@@ -1331,15 +1340,15 @@
     },
     {
       "path": "tests/cli-audit.test.ts",
-      "hash": "b606906bd0eea321"
+      "hash": "c028092c829c0d30"
     },
     {
       "path": "tests/cli-doctor.test.ts",
-      "hash": "65837c9631783546"
+      "hash": "a4d7aee268382d23"
     },
     {
       "path": "tests/cli-help.test.ts",
-      "hash": "e9b561c3cbeca831"
+      "hash": "6a73781f17aebe55"
     },
     {
       "path": "tests/cli-repository-workspace.test.ts",
@@ -1351,7 +1360,7 @@
     },
     {
       "path": "tests/cli-review.test.ts",
-      "hash": "79b2df87ab6295b9"
+      "hash": "a3ce3a439a93d0c4"
     },
     {
       "path": "tests/cli-triage.test.ts",
@@ -1555,7 +1564,7 @@
     }
   ],
   "contextArtifactHashes": [],
-  "createdAt": "2026-05-05T08:46:26.616Z",
+  "createdAt": "2026-05-05T23:11:37.127Z",
   "agentReadiness": {
     "score": 100,
     "categories": [
@@ -1978,6 +1987,10 @@
             "reason": "detected repository context"
           },
           {
+            "path": "packages/shared/tests/repository-ignore.test.ts",
+            "reason": "detected repository context"
+          },
+          {
             "path": "packages/shared/tests/schemas.test.ts",
             "reason": "detected repository context"
           },
@@ -2351,6 +2364,10 @@
           },
           {
             "path": "packages/review/tests/workflow.test.ts",
+            "reason": "detected repository context"
+          },
+          {
+            "path": "packages/shared/tests/repository-ignore.test.ts",
             "reason": "detected repository context"
           },
           {
@@ -2877,7 +2894,7 @@
       }
     ],
     "missingItems": [],
-    "generatedAt": "2026-05-05T08:46:26.616Z"
+    "generatedAt": "2026-05-05T23:11:37.127Z"
   },
-  "openMaintainerProfileHash": "f863946f1bffa00b"
+  "openMaintainerProfileHash": "f75b5bd3259f9a6a"
 }
