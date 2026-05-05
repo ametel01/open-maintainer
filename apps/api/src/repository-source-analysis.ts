@@ -25,7 +25,7 @@ export type RepositoryFile = {
   content: string;
 };
 
-export type RegisterRepositorySourceInput =
+export type RepositorySourceRegistration =
   | {
       kind: "local-worktree";
       repoRoot: string;
@@ -38,123 +38,82 @@ export type RegisterRepositorySourceInput =
       files: RepositoryFile[];
     };
 
-export type RepositorySourceAnalysisError = {
-  statusCode: 404 | 409 | 422;
-  code:
-    | "UNKNOWN_REPO"
-    | "NO_PROFILE"
-    | "NO_READABLE_FILES"
-    | "REPOSITORY_FILES_UNAVAILABLE"
-    | "WORKTREE_UNAVAILABLE";
-  message: string;
-  run?: RunRecord;
+export type RepositoryLifecycleIntent =
+  | {
+      kind: "analyze";
+      ref?: string;
+      profile?: "refresh" | "reuse-or-create";
+    }
+  | { kind: "generate-context"; ref?: string }
+  | {
+      kind: "review-preview";
+      baseRef?: string;
+      headRef?: string;
+      prNumber?: number;
+    }
+  | { kind: "context-pr"; requireWritableWorktree?: boolean };
+
+export type RepositorySourceKind =
+  | "local-worktree"
+  | "uploaded-files"
+  | "uploaded-files-mounted-worktree"
+  | "github-app"
+  | "cached";
+
+export type RegisteredRepositorySource = {
+  repo: Repo;
+  fileCount: number;
+  source: Extract<
+    RepositorySourceKind,
+    "local-worktree" | "uploaded-files" | "uploaded-files-mounted-worktree"
+  >;
+  worktreeRoot: string | null;
 };
 
-export type RepositorySourceAnalysisResult<T> =
-  | ({ ok: true } & T)
-  | ({ ok: false } & RepositorySourceAnalysisError);
-
-export type RepositoryAnalysisWorkspace = {
+export type RepositorySourceWorkspace = {
   repo: Repo;
   files: RepositoryFile[];
   profile: RepoProfile;
   profileCreated: boolean;
-  run?: RunRecord;
   worktreeRoot: string | null;
+  source: RepositorySourceKind;
+  run: RunRecord | null;
 };
 
-export type RepositoryGenerationWorkspace = RepositoryAnalysisWorkspace;
-
-export type RepositoryReviewWorkspace = RepositoryAnalysisWorkspace;
-
-export type RepositoryContextPrWorkspace = RepositoryAnalysisWorkspace;
-
-export interface RepositoryOperations {
-  registerSource(input: RegisterRepositorySourceInput): Promise<
-    RepositorySourceAnalysisResult<{
-      repo: Repo;
-      fileCount: number;
-      source:
-        | "local-worktree"
-        | "uploaded-files"
-        | "uploaded-files-mounted-worktree";
-      worktreeRoot: string | null;
-    }>
-  >;
-
-  prepareAnalysis(input: {
-    repoId: string;
-    ref?: string;
-    profilePolicy: "reuse" | "refresh";
-    createdRunMessage?: string;
-  }): Promise<RepositorySourceAnalysisResult<RepositoryAnalysisWorkspace>>;
-
-  prepareGeneration(input: {
-    repoId: string;
-  }): Promise<RepositorySourceAnalysisResult<RepositoryGenerationWorkspace>>;
-
-  prepareReview(input: {
-    repoId: string;
-    ref?: string;
-    baseRef?: string;
-    headRef?: string;
-    prNumber?: number;
-  }): Promise<RepositorySourceAnalysisResult<RepositoryReviewWorkspace>>;
-
-  prepareContextPr(input: {
-    repoId: string;
-    requireWritableWorktree?: boolean;
-  }): Promise<RepositorySourceAnalysisResult<RepositoryContextPrWorkspace>>;
-}
-
-export interface RepositorySourceAnalysisRegistry extends RepositoryOperations {
-  analyzeRepository(input: {
-    repoId: string;
-    ref?: string;
-  }): Promise<
-    RepositorySourceAnalysisResult<{
-      repo: Repo;
-      run: RunRecord;
-      profile: RepoProfile;
-    }>
-  >;
-
-  ensureProfile(input: {
-    repoId: string;
-    ref?: string;
-    createdRunMessage?: string;
-  }): Promise<
-    RepositorySourceAnalysisResult<{
-      repo: Repo;
-      profile: RepoProfile;
-      created: boolean;
-      run?: RunRecord;
-    }>
-  >;
-}
-
-type RepositoryFilesFetcher = (input: {
-  owner: string;
-  repo: string;
-  ref: string;
-  auth?: GitHubAppInstallationAuth;
-}) => Promise<{ files: RepositoryFile[] }>;
-
-type RegistryOptions = {
-  store: MemoryStore;
-  state?: RepositorySourceStorePort;
-  fetchRepositoryFiles?: RepositoryFilesFetcher;
-  getInstallationAuth?: (
-    installationId: string,
-  ) => GitHubAppInstallationAuth | null;
+export type RepositoryLifecycleError = {
+  statusCode: 404 | 409 | 422;
+  code:
+    | "UNKNOWN_REPO"
+    | "NO_READABLE_FILES"
+    | "REPOSITORY_FILES_UNAVAILABLE"
+    | "NO_PROFILE"
+    | "WORKTREE_UNAVAILABLE";
+  message: string;
+  run: RunRecord | null;
 };
 
-export type RepositorySourceStorePort = {
+export type RepositoryLifecycleResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: RepositoryLifecycleError };
+
+export interface RepositorySourceLifecycle {
+  register(
+    input: RepositorySourceRegistration,
+  ): Promise<RepositoryLifecycleResult<RegisteredRepositorySource>>;
+
+  prepare(input: {
+    repoId: string;
+    intent: RepositoryLifecycleIntent;
+  }): Promise<RepositoryLifecycleResult<RepositorySourceWorkspace>>;
+}
+
+export type RepositorySourceStatePort = {
   repo(repoId: string): Repo | null;
   files(repoId: string): RepositoryFile[];
   saveFiles(repoId: string, files: RepositoryFile[]): void;
   worktreeRoot(repoId: string): string | null;
   saveWorktreeRoot(repoId: string, worktreeRoot: string | null): void;
+  source(repoId: string): RegisteredRepositorySource["source"] | null;
   latestProfile(repoId: string): RepoProfile | null;
   profileCount(repoId: string): number;
   addProfile(profile: RepoProfile): void;
@@ -167,26 +126,101 @@ export type RepositorySourceStorePort = {
     installation: Installation;
     files: RepositoryFile[];
     worktreeRoot: string | null;
+    source: RegisteredRepositorySource["source"];
   }): void;
   clearDerivedRepositoryState(repoId: string): void;
 };
 
+type RepositoryFilesFetcher = (input: {
+  owner: string;
+  repo: string;
+  ref: string;
+  auth?: GitHubAppInstallationAuth;
+}) => Promise<{ files: RepositoryFile[] }>;
+
+type RepositoryScanner = typeof scanRepository;
+type RepositoryProfilePreparer = typeof prepareRepositoryProfile;
+
+export type RepositoryFileMaterializer = (input: {
+  repoId: string;
+  files: RepositoryFile[];
+}) => Promise<string>;
+
+export type MountedWorktreeMatcher = (input: {
+  name: string;
+  files: RepositoryFile[];
+}) => Promise<{
+  worktreeRoot: string;
+  files: RepositoryFile[];
+  defaultBranch: string;
+} | null>;
+
+export type RepositoryLifecycleGitPort = {
+  detectDefaultBranch(repoRoot: string): Promise<string>;
+  requireWorktree(repoRoot: string): Promise<void>;
+};
+
+type LifecycleOptions = {
+  store?: MemoryStore;
+  state?: RepositorySourceStatePort;
+  scanRepository?: RepositoryScanner;
+  prepareRepositoryProfile?: RepositoryProfilePreparer;
+  fetchRepositoryFiles?: RepositoryFilesFetcher;
+  getInstallationAuth?: (
+    installationId: string,
+  ) => GitHubAppInstallationAuth | null;
+  materializeFiles?: RepositoryFileMaterializer;
+  mountedWorktrees?: MountedWorktreeMatcher;
+  git?: Partial<RepositoryLifecycleGitPort>;
+  clock?: () => string;
+};
+
+type RepositoryFilesResult =
+  | { ok: true; files: RepositoryFile[]; source: RepositorySourceKind }
+  | { ok: false; error: RepositoryLifecycleError };
+
 const execFileAsync = promisify(execFile);
 const maxRepositoryFiles = 800;
 
-export function createRepositoryOperations(
-  options: RegistryOptions,
-): RepositorySourceAnalysisRegistry {
-  const state =
-    options.state ?? repositorySourceStoreFromMemoryStore(options.store);
+export function createRepositorySourceLifecycle(
+  options: LifecycleOptions,
+): RepositorySourceLifecycle {
+  const resolvedState =
+    options.state ??
+    (options.store
+      ? repositorySourceStateFromMemoryStore(options.store)
+      : undefined);
+  if (!resolvedState) {
+    throw new Error(
+      "createRepositorySourceLifecycle requires a store or state port.",
+    );
+  }
+  const state: RepositorySourceStatePort = resolvedState;
+
+  const scanner = options.scanRepository ?? scanRepository;
+  const profilePreparer =
+    options.prepareRepositoryProfile ?? prepareRepositoryProfile;
   const fetchRepositoryFiles =
     options.fetchRepositoryFiles ?? defaultRepositoryFilesFetcher;
   const getInstallationAuth = options.getInstallationAuth ?? (() => null);
+  const materializeFiles =
+    options.materializeFiles ?? defaultRepositoryFileMaterializer;
+  const clock = options.clock ?? nowIso;
+  const git: RepositoryLifecycleGitPort = {
+    detectDefaultBranch:
+      options.git?.detectDefaultBranch ?? detectLocalDefaultBranch,
+    requireWorktree: options.git?.requireWorktree ?? requireGitRepository,
+  };
+  const mountedWorktrees =
+    options.mountedWorktrees ??
+    createMountedWorktreeMatcher({ scanRepository: scanner, git });
 
-  async function registerSource(input: RegisterRepositorySourceInput) {
+  async function register(
+    input: RepositorySourceRegistration,
+  ): Promise<RepositoryLifecycleResult<RegisteredRepositorySource>> {
     if (input.kind === "local-worktree") {
       const repoRoot = path.resolve(input.repoRoot);
-      const files = await scanRepository(repoRoot, {
+      const files = await scanner(repoRoot, {
         maxFiles: maxRepositoryFiles,
       });
       if (files.length === 0) {
@@ -202,23 +236,23 @@ export function createRepositoryOperations(
         owner,
         name,
         files,
+        source: "local-worktree",
         worktreeRoot: repoRoot,
-        defaultBranch: await detectLocalDefaultBranch(repoRoot),
+        defaultBranch: await git.detectDefaultBranch(repoRoot),
       });
 
       return {
-        ok: true as const,
-        repo,
-        fileCount: files.length,
-        source: "local-worktree" as const,
-        worktreeRoot: repoRoot,
+        ok: true,
+        value: {
+          repo,
+          fileCount: files.length,
+          source: "local-worktree",
+          worktreeRoot: repoRoot,
+        },
       };
     }
 
-    const files = input.files.flatMap((file) => {
-      const normalizedPath = normalizeUploadedPath(file.path);
-      return normalizedPath ? [{ ...file, path: normalizedPath }] : [];
-    });
+    const files = normalizeUploadedFiles(input.files);
     if (files.length === 0) {
       return noReadableFiles(
         "No readable repository files were provided by the selected directory.",
@@ -226,7 +260,7 @@ export function createRepositoryOperations(
     }
 
     const repoName = input.name ?? "uploaded-repo";
-    const mountedWorktree = await resolveMountedWorktreeForUploadedFiles({
+    const mountedWorktree = await mountedWorktrees({
       name: repoName,
       files,
     });
@@ -234,14 +268,18 @@ export function createRepositoryOperations(
       owner: "local",
       name: repoName,
     });
+    const source = mountedWorktree
+      ? "uploaded-files-mounted-worktree"
+      : "uploaded-files";
     const worktreeRoot =
       mountedWorktree?.worktreeRoot ??
-      (await materializeRepositoryFiles(pendingRepo.id, files));
+      (await materializeFiles({ repoId: pendingRepo.id, files }));
     const repo = await registerLocalRepository({
       owner: "local",
       name: repoName,
       files: mountedWorktree?.files ?? files,
       id: pendingRepo.id,
+      source,
       worktreeRoot,
       ...(mountedWorktree
         ? { defaultBranch: mountedWorktree.defaultBranch }
@@ -249,69 +287,83 @@ export function createRepositoryOperations(
     });
 
     return {
-      ok: true as const,
-      repo,
-      fileCount: files.length,
-      source: mountedWorktree
-        ? ("uploaded-files-mounted-worktree" as const)
-        : ("uploaded-files" as const),
-      worktreeRoot,
+      ok: true,
+      value: {
+        repo,
+        fileCount: files.length,
+        source,
+        worktreeRoot,
+      },
     };
   }
 
-  async function analyzeRepository(input: { repoId: string; ref?: string }) {
-    const result = await prepareAnalysis({
-      repoId: input.repoId,
-      ...(input.ref ? { ref: input.ref } : {}),
-      profilePolicy: "refresh",
-    });
-    if (!result.ok) {
-      return result;
-    }
-    return {
-      ok: true as const,
-      repo: result.repo,
-      run: result.run as RunRecord,
-      profile: result.profile,
-    };
-  }
-
-  async function ensureProfile(input: {
+  async function prepare(input: {
     repoId: string;
-    ref?: string;
-    createdRunMessage?: string;
-  }) {
-    const result = await prepareAnalysis({
-      repoId: input.repoId,
-      ...(input.ref ? { ref: input.ref } : {}),
-      profilePolicy: "reuse",
-      ...(input.createdRunMessage
-        ? { createdRunMessage: input.createdRunMessage }
-        : {}),
-    });
-    if (!result.ok) {
-      return result;
-    }
-    return {
-      ok: true as const,
-      repo: result.repo,
-      profile: result.profile,
-      created: result.profileCreated,
-      ...(result.run ? { run: result.run } : {}),
-    };
-  }
-
-  async function prepareAnalysis(input: {
-    repoId: string;
-    ref?: string;
-    profilePolicy: "reuse" | "refresh";
-    createdRunMessage?: string;
-  }): Promise<RepositorySourceAnalysisResult<RepositoryAnalysisWorkspace>> {
+    intent: RepositoryLifecycleIntent;
+  }): Promise<RepositoryLifecycleResult<RepositorySourceWorkspace>> {
     const repo = state.repo(input.repoId);
     if (!repo) {
       return unknownRepo();
     }
 
+    switch (input.intent.kind) {
+      case "analyze":
+        return prepareProfileWorkspace({
+          repo,
+          repoId: input.repoId,
+          ...(input.intent.ref ? { ref: input.intent.ref } : {}),
+          profilePolicy: input.intent.profile ?? "refresh",
+          createdRunMessage: "Repository profile generated.",
+        });
+      case "generate-context":
+        return existingProfileWorkspace({
+          repo,
+          repoId: input.repoId,
+          ...(input.intent.ref ? { ref: input.intent.ref } : {}),
+          missingProfileMessage:
+            "Generate a repo profile before context artifacts.",
+        });
+      case "review-preview":
+        return prepareProfileWorkspace({
+          repo,
+          repoId: input.repoId,
+          ...(input.intent.baseRef ? { ref: input.intent.baseRef } : {}),
+          profilePolicy: "reuse-or-create",
+          createdRunMessage:
+            "Repository profile generated for PR review preview.",
+        });
+      case "context-pr": {
+        const workspace = await existingProfileWorkspace({
+          repo,
+          repoId: input.repoId,
+          missingProfileMessage: "No repo profile available.",
+        });
+        if (!workspace.ok) {
+          return workspace;
+        }
+        if (input.intent.requireWritableWorktree) {
+          const worktreeRoot = workspace.value.worktreeRoot;
+          if (!worktreeRoot) {
+            return worktreeUnavailable();
+          }
+          try {
+            await git.requireWorktree(worktreeRoot);
+          } catch {
+            return worktreeUnavailable();
+          }
+        }
+        return workspace;
+      }
+    }
+  }
+
+  async function prepareProfileWorkspace(input: {
+    repoId: string;
+    repo: Repo;
+    ref?: string;
+    profilePolicy: "refresh" | "reuse-or-create";
+    createdRunMessage: string;
+  }): Promise<RepositoryLifecycleResult<RepositorySourceWorkspace>> {
     const existingProfile = state.latestProfile(input.repoId);
     const shouldCreateProfile =
       input.profilePolicy === "refresh" || !existingProfile;
@@ -320,7 +372,7 @@ export function createRepositoryOperations(
           repoId: input.repoId,
           type: "analysis",
           status: "running",
-          inputSummary: `Analyze ${repo.fullName}`,
+          inputSummary: `Analyze ${input.repo.fullName}`,
           safeMessage: null,
           artifactVersions: [],
           repoProfileVersion: null,
@@ -328,9 +380,9 @@ export function createRepositoryOperations(
           model: null,
           externalId: null,
         })
-      : undefined;
-    const filesResult = await repositoryFilesForAnalysis({
-      repo,
+      : null;
+    const filesResult = await repositoryFilesForWorkspace({
+      repo: input.repo,
       repoId: input.repoId,
       ...(input.ref ? { ref: input.ref } : {}),
     });
@@ -338,147 +390,118 @@ export function createRepositoryOperations(
       const failedRun = run
         ? state.updateRun(run.id, {
             status: "failed",
-            safeMessage: filesResult.message,
+            safeMessage: filesResult.error.message,
           })
-        : undefined;
+        : null;
       return {
-        ...filesResult,
-        ...(failedRun ? { run: failedRun } : {}),
+        ok: false,
+        error: {
+          ...filesResult.error,
+          run: failedRun,
+        },
       };
     }
 
     const profile = shouldCreateProfile
       ? await createProfile({
-          repo,
+          repo: input.repo,
           repoId: input.repoId,
           files: filesResult.files,
         })
       : existingProfile;
+    if (!profile) {
+      return noProfile("No repo profile available.");
+    }
     const updatedRun = run
       ? state.updateRun(run.id, {
           status: "succeeded",
           repoProfileVersion: profile.version,
-          safeMessage:
-            input.createdRunMessage ?? "Repository profile generated.",
+          safeMessage: input.createdRunMessage,
         })
-      : undefined;
+      : null;
+
     return {
-      ok: true as const,
-      repo,
-      files: filesResult.files,
-      profile,
-      profileCreated: shouldCreateProfile,
-      ...(updatedRun ? { run: updatedRun } : {}),
-      worktreeRoot: state.worktreeRoot(input.repoId),
+      ok: true,
+      value: {
+        repo: input.repo,
+        files: filesResult.files,
+        profile,
+        profileCreated: shouldCreateProfile,
+        run: updatedRun,
+        worktreeRoot: state.worktreeRoot(input.repoId),
+        source: filesResult.source,
+      },
     };
-  }
-
-  async function prepareGeneration(input: {
-    repoId: string;
-  }): Promise<RepositorySourceAnalysisResult<RepositoryGenerationWorkspace>> {
-    return existingProfileWorkspace({
-      repoId: input.repoId,
-      missingProfileMessage:
-        "Generate a repo profile before context artifacts.",
-    });
-  }
-
-  async function prepareReview(input: {
-    repoId: string;
-    ref?: string;
-    baseRef?: string;
-    headRef?: string;
-    prNumber?: number;
-  }): Promise<RepositorySourceAnalysisResult<RepositoryReviewWorkspace>> {
-    return prepareAnalysis({
-      repoId: input.repoId,
-      ...((input.ref ?? input.baseRef)
-        ? { ref: input.ref ?? input.baseRef }
-        : {}),
-      profilePolicy: "reuse",
-      createdRunMessage: "Repository profile generated for PR review preview.",
-    });
-  }
-
-  async function prepareContextPr(input: {
-    repoId: string;
-    requireWritableWorktree?: boolean;
-  }): Promise<RepositorySourceAnalysisResult<RepositoryContextPrWorkspace>> {
-    const workspace = await existingProfileWorkspace({
-      repoId: input.repoId,
-      missingProfileMessage: "No repo profile available.",
-    });
-    if (!workspace.ok) {
-      return workspace;
-    }
-    if (input.requireWritableWorktree && !workspace.worktreeRoot) {
-      return worktreeUnavailable();
-    }
-    return workspace;
   }
 
   async function existingProfileWorkspace(input: {
     repoId: string;
+    repo: Repo;
+    ref?: string;
     missingProfileMessage: string;
-  }): Promise<RepositorySourceAnalysisResult<RepositoryAnalysisWorkspace>> {
-    const repo = state.repo(input.repoId);
-    if (!repo) {
-      return unknownRepo();
-    }
+  }): Promise<RepositoryLifecycleResult<RepositorySourceWorkspace>> {
     const profile = state.latestProfile(input.repoId);
     if (!profile) {
       return noProfile(input.missingProfileMessage);
     }
-    const filesResult = await repositoryFilesForAnalysis({
-      repo,
+    const filesResult = await repositoryFilesForWorkspace({
+      repo: input.repo,
       repoId: input.repoId,
+      ...(input.ref ? { ref: input.ref } : {}),
     });
     if (!filesResult.ok) {
       return filesResult;
     }
     return {
-      ok: true as const,
-      repo,
-      files: filesResult.files,
-      profile,
-      profileCreated: false,
-      worktreeRoot: state.worktreeRoot(input.repoId),
+      ok: true,
+      value: {
+        repo: input.repo,
+        files: filesResult.files,
+        profile,
+        profileCreated: false,
+        run: null,
+        worktreeRoot: state.worktreeRoot(input.repoId),
+        source: filesResult.source,
+      },
     };
   }
 
-  async function repositoryFilesForAnalysis(input: {
+  async function repositoryFilesForWorkspace(input: {
     repoId: string;
     repo: Repo;
     ref?: string;
-  }): Promise<
-    | { ok: true; files: RepositoryFile[] }
-    | {
-        ok: false;
-        statusCode: 409;
-        code: "REPOSITORY_FILES_UNAVAILABLE";
-        message: string;
-      }
-  > {
+  }): Promise<RepositoryFilesResult> {
     const auth = getInstallationAuth(input.repo.installationId);
-    if (!auth) {
-      const files = state.files(input.repoId);
-      if (files.length > 0) {
-        return { ok: true, files };
+    if (auth) {
+      try {
+        const fetched = await fetchRepositoryFiles({
+          owner: input.repo.owner,
+          repo: input.repo.name,
+          ref: input.ref ?? input.repo.defaultBranch,
+          auth,
+        });
+        const files = normalizeRepositoryFiles(fetched.files);
+        if (files.length === 0) {
+          return noReadableFiles(
+            "No readable repository files are available for this repository.",
+          );
+        }
+        state.saveFiles(input.repoId, files);
+        return { ok: true, files, source: "github-app" };
+      } catch {
+        return repositoryFilesUnavailable();
       }
-      return repositoryFilesUnavailable();
     }
-    const fetched = await fetchRepositoryFiles({
-      owner: input.repo.owner,
-      repo: input.repo.name,
-      ref: input.ref ?? input.repo.defaultBranch,
-      auth,
-    });
-    const files = fetched.files.map((file) => ({
-      path: file.path,
-      content: file.content,
-    }));
-    state.saveFiles(input.repoId, files);
-    return { ok: true, files };
+
+    const files = state.files(input.repoId);
+    if (files.length > 0) {
+      return {
+        ok: true,
+        files,
+        source: state.source(input.repoId) ?? "cached",
+      };
+    }
+    return repositoryFilesUnavailable();
   }
 
   async function createProfile(input: {
@@ -487,7 +510,7 @@ export function createRepositoryOperations(
     files: RepositoryFile[];
   }): Promise<RepoProfile> {
     const version = state.profileCount(input.repoId) + 1;
-    const result = await prepareRepositoryProfile({
+    const result = await profilePreparer({
       files: input.files,
       identity: {
         repoId: input.repoId,
@@ -507,6 +530,7 @@ export function createRepositoryOperations(
     name: string;
     files: RepositoryFile[];
     id?: string;
+    source: RegisteredRepositorySource["source"];
     worktreeRoot?: string;
     defaultBranch?: string;
   }): Promise<Repo> {
@@ -514,9 +538,10 @@ export function createRepositoryOperations(
 
     state.saveRegisteredRepository({
       repo,
-      installation: localInstallation(),
+      installation: localInstallation(clock),
       files: input.files,
       worktreeRoot: input.worktreeRoot ?? null,
+      source: input.source,
     });
     state.clearDerivedRepositoryState(repo.id);
 
@@ -524,22 +549,25 @@ export function createRepositoryOperations(
   }
 
   return {
-    registerSource,
-    prepareAnalysis,
-    prepareGeneration,
-    prepareReview,
-    prepareContextPr,
-    analyzeRepository,
-    ensureProfile,
+    register,
+    prepare,
   };
 }
 
-export const createRepositorySourceAnalysisRegistry =
-  createRepositoryOperations;
+const memoryStoreSources = new WeakMap<
+  MemoryStore,
+  Map<string, RegisteredRepositorySource["source"]>
+>();
 
-export function repositorySourceStoreFromMemoryStore(
+export function repositorySourceStateFromMemoryStore(
   store: MemoryStore,
-): RepositorySourceStorePort {
+): RepositorySourceStatePort {
+  let sources = memoryStoreSources.get(store);
+  if (!sources) {
+    sources = new Map();
+    memoryStoreSources.set(store, sources);
+  }
+
   const saveWorktreeRoot = (repoId: string, worktreeRoot: string | null) => {
     if (worktreeRoot) {
       store.repoWorktrees.set(repoId, worktreeRoot);
@@ -547,6 +575,7 @@ export function repositorySourceStoreFromMemoryStore(
       store.repoWorktrees.delete(repoId);
     }
   };
+
   return {
     repo(repoId) {
       return store.repos.get(repoId) ?? null;
@@ -561,6 +590,9 @@ export function repositorySourceStoreFromMemoryStore(
       return store.repoWorktrees.get(repoId) ?? null;
     },
     saveWorktreeRoot,
+    source(repoId) {
+      return sources.get(repoId) ?? null;
+    },
     latestProfile(repoId) {
       return store.latestProfile(repoId);
     },
@@ -580,6 +612,7 @@ export function repositorySourceStoreFromMemoryStore(
       store.installations.set(input.repo.installationId, input.installation);
       store.repos.set(input.repo.id, input.repo);
       store.repoFiles.set(input.repo.id, input.files);
+      sources.set(input.repo.id, input.source);
       saveWorktreeRoot(input.repo.id, input.worktreeRoot);
     },
     clearDerivedRepositoryState(repoId) {
@@ -604,58 +637,75 @@ async function defaultRepositoryFilesFetcher(input: {
   };
 }
 
-function unknownRepo(): RepositorySourceAnalysisResult<never> {
-  return {
-    ok: false,
-    statusCode: 404,
-    code: "UNKNOWN_REPO",
-    message: "Unknown repo.",
-  };
+function normalizeRepositoryFiles(files: RepositoryFile[]): RepositoryFile[] {
+  return files.map((file) => ({
+    path: file.path,
+    content: file.content,
+  }));
 }
 
-function noProfile(message: string): RepositorySourceAnalysisResult<never> {
-  return {
-    ok: false,
-    statusCode: 409,
-    code: "NO_PROFILE",
-    message,
-  };
+function normalizeUploadedFiles(files: RepositoryFile[]): RepositoryFile[] {
+  return files.flatMap((file) => {
+    const normalizedPath = normalizeUploadedPath(file.path);
+    return normalizedPath ? [{ ...file, path: normalizedPath }] : [];
+  });
 }
 
-function noReadableFiles(
+function lifecycleError(
+  statusCode: RepositoryLifecycleError["statusCode"],
+  code: RepositoryLifecycleError["code"],
   message: string,
-): RepositorySourceAnalysisResult<never> {
+  run: RunRecord | null = null,
+): { ok: false; error: RepositoryLifecycleError } {
   return {
     ok: false,
-    statusCode: 422,
-    code: "NO_READABLE_FILES",
-    message,
+    error: {
+      statusCode,
+      code,
+      message,
+      run,
+    },
   };
 }
 
-function worktreeUnavailable(): RepositorySourceAnalysisResult<never> {
-  return {
-    ok: false,
-    statusCode: 409,
-    code: "WORKTREE_UNAVAILABLE",
-    message:
-      "A writable local repository worktree is required for this operation.",
-  };
+function unknownRepo(): RepositoryLifecycleResult<never> {
+  return lifecycleError(404, "UNKNOWN_REPO", "Unknown repo.");
+}
+
+function noProfile(message: string): {
+  ok: false;
+  error: RepositoryLifecycleError;
+} {
+  return lifecycleError(409, "NO_PROFILE", message);
+}
+
+function noReadableFiles(message: string): {
+  ok: false;
+  error: RepositoryLifecycleError;
+} {
+  return lifecycleError(422, "NO_READABLE_FILES", message);
+}
+
+function worktreeUnavailable(): {
+  ok: false;
+  error: RepositoryLifecycleError;
+} {
+  return lifecycleError(
+    409,
+    "WORKTREE_UNAVAILABLE",
+    "A writable local repository worktree is required for this operation.",
+  );
 }
 
 function repositoryFilesUnavailable(): {
   ok: false;
-  statusCode: 409;
-  code: "REPOSITORY_FILES_UNAVAILABLE";
-  message: string;
+  error: RepositoryLifecycleError;
 } {
-  return {
-    ok: false,
-    statusCode: 409,
-    code: "REPOSITORY_FILES_UNAVAILABLE",
-    message:
-      "Repository files are unavailable. Configure GitHub App credentials with contents read permission or seed local files for development.",
-  };
+  return lifecycleError(
+    409,
+    "REPOSITORY_FILES_UNAVAILABLE",
+    "Repository files are unavailable. Configure GitHub App credentials with contents read permission or seed local files for development.",
+  );
 }
 
 function localRepositoryRecord(input: {
@@ -676,8 +726,7 @@ function localRepositoryRecord(input: {
   };
 }
 
-function localInstallation(): Installation {
-  const createdAt = nowIso();
+function localInstallation(clock: () => string): Installation {
   return {
     id: "installation_local",
     accountLogin: "local",
@@ -688,41 +737,39 @@ function localInstallation(): Installation {
       metadata: "local",
       pull_requests: "mock",
     },
-    createdAt,
+    createdAt: clock(),
   };
 }
 
-async function resolveMountedWorktreeForUploadedFiles(input: {
-  name: string;
-  files: RepositoryFile[];
-}): Promise<{
-  worktreeRoot: string;
-  files: RepositoryFile[];
-  defaultBranch: string;
-} | null> {
-  for (const candidateRoot of mountedWorktreeCandidates()) {
-    try {
-      await requireGitRepository(candidateRoot);
-      const candidateFiles = await scanRepository(candidateRoot, {
-        maxFiles: maxRepositoryFiles,
-      });
-      if (
-        uploadedFilesMatchMountedWorktree({
-          uploadName: input.name,
-          uploadedFiles: input.files,
-          candidateRoot,
-          candidateFiles,
-        })
-      ) {
-        return {
-          worktreeRoot: candidateRoot,
-          files: candidateFiles,
-          defaultBranch: await detectLocalDefaultBranch(candidateRoot),
-        };
-      }
-    } catch {}
-  }
-  return null;
+function createMountedWorktreeMatcher(input: {
+  scanRepository: RepositoryScanner;
+  git: RepositoryLifecycleGitPort;
+}): MountedWorktreeMatcher {
+  return async ({ name, files }) => {
+    for (const candidateRoot of mountedWorktreeCandidates()) {
+      try {
+        await input.git.requireWorktree(candidateRoot);
+        const candidateFiles = await input.scanRepository(candidateRoot, {
+          maxFiles: maxRepositoryFiles,
+        });
+        if (
+          uploadedFilesMatchMountedWorktree({
+            uploadName: name,
+            uploadedFiles: files,
+            candidateRoot,
+            candidateFiles,
+          })
+        ) {
+          return {
+            worktreeRoot: candidateRoot,
+            files: candidateFiles,
+            defaultBranch: await input.git.detectDefaultBranch(candidateRoot),
+          };
+        }
+      } catch {}
+    }
+    return null;
+  };
 }
 
 function mountedWorktreeCandidates(): string[] {
@@ -791,16 +838,16 @@ function rootFileContent(
   return files.find((file) => file.path === filePath)?.content ?? null;
 }
 
-async function materializeRepositoryFiles(
-  repoId: string,
-  files: RepositoryFile[],
-): Promise<string> {
+async function defaultRepositoryFileMaterializer(input: {
+  repoId: string;
+  files: RepositoryFile[];
+}): Promise<string> {
   const base =
     process.env.OPEN_MAINTAINER_LOCAL_REPO_CACHE ??
     path.join(tmpdir(), "open-maintainer", "local-repos");
-  const root = path.join(base, repoId);
+  const root = path.join(base, input.repoId);
   await rm(root, { recursive: true, force: true });
-  for (const file of files) {
+  for (const file of input.files) {
     const normalizedPath = normalizeUploadedPath(file.path);
     if (!normalizedPath) {
       continue;

@@ -7,7 +7,7 @@ import { MemoryStore } from "@open-maintainer/db";
 import type { Repo } from "@open-maintainer/shared";
 import { newId, nowIso } from "@open-maintainer/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { createRepositorySourceAnalysisRegistry } from "../src/repository-source-analysis";
+import { createRepositorySourceLifecycle } from "../src/repository-source-analysis";
 
 const execFileAsync = promisify(execFile);
 
@@ -19,10 +19,10 @@ afterEach(() => {
   restoreEnv("OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS", previousMountedRoots);
 });
 
-describe("repository source analysis registry", () => {
+describe("repository source lifecycle", () => {
   it("registers local worktrees and invalidates derived state", async () => {
     const store = new MemoryStore();
-    const registry = createRepositorySourceAnalysisRegistry({ store });
+    const lifecycle = createRepositorySourceLifecycle({ store });
     const repoRoot = await createGitRepository("local-worktree-tool", {
       branch: "main",
       files: {
@@ -35,7 +35,7 @@ describe("repository source analysis registry", () => {
     });
 
     try {
-      const registered = await registry.registerSource({
+      const registered = await lifecycle.register({
         kind: "local-worktree",
         repoRoot,
         owner: "local",
@@ -44,17 +44,18 @@ describe("repository source analysis registry", () => {
       if (!registered.ok) {
         return;
       }
-      expect(registered.repo.id).toBe("local_local_local_worktree_tool");
-      expect(registered.fileCount).toBeGreaterThan(0);
-      expect(registered.source).toBe("local-worktree");
-      expect(registered.worktreeRoot).toBe(repoRoot);
-      expect(registered.repo.defaultBranch).toBe("main");
-      expect(store.repoFiles.get(registered.repo.id)?.[0]?.path).toBe(
+      expect(registered.value.repo.id).toBe("local_local_local_worktree_tool");
+      expect(registered.value.fileCount).toBeGreaterThan(0);
+      expect(registered.value.source).toBe("local-worktree");
+      expect(registered.value.worktreeRoot).toBe(repoRoot);
+      expect(registered.value.repo.defaultBranch).toBe("main");
+      expect(store.repoFiles.get(registered.value.repo.id)?.[0]?.path).toBe(
         "package.json",
       );
 
-      const analysis = await registry.analyzeRepository({
-        repoId: registered.repo.id,
+      const analysis = await lifecycle.prepare({
+        repoId: registered.value.repo.id,
+        intent: { kind: "analyze", profile: "refresh" },
       });
       expect(analysis.ok).toBe(true);
       if (!analysis.ok) {
@@ -62,24 +63,24 @@ describe("repository source analysis registry", () => {
       }
       store.addArtifact({
         id: newId("artifact"),
-        repoId: registered.repo.id,
+        repoId: registered.value.repo.id,
         type: "AGENTS.md",
         version: 1,
         content: "# stale\n",
-        sourceProfileVersion: analysis.profile.version,
+        sourceProfileVersion: analysis.value.profile.version,
         modelProvider: null,
         model: null,
         createdAt: nowIso(),
       });
 
-      const registeredAgain = await registry.registerSource({
+      const registeredAgain = await lifecycle.register({
         kind: "local-worktree",
         repoRoot,
         owner: "local",
       });
       expect(registeredAgain.ok).toBe(true);
-      expect(store.profiles.get(registered.repo.id)).toBeUndefined();
-      expect(store.artifacts.get(registered.repo.id)).toBeUndefined();
+      expect(store.profiles.get(registered.value.repo.id)).toBeUndefined();
+      expect(store.artifacts.get(registered.value.repo.id)).toBeUndefined();
     } finally {
       await rm(repoRoot, { recursive: true, force: true });
     }
@@ -89,10 +90,10 @@ describe("repository source analysis registry", () => {
     const store = new MemoryStore();
     const cacheRoot = await mkdtemp(path.join(tmpdir(), "rsa-cache-"));
     process.env.OPEN_MAINTAINER_LOCAL_REPO_CACHE = cacheRoot;
-    const registry = createRepositorySourceAnalysisRegistry({ store });
+    const lifecycle = createRepositorySourceLifecycle({ store });
 
     try {
-      const registered = await registry.registerSource({
+      const registered = await lifecycle.register({
         kind: "uploaded-files",
         name: "uploaded-tool",
         files: [
@@ -106,17 +107,20 @@ describe("repository source analysis registry", () => {
       if (!registered.ok) {
         return;
       }
-      expect(registered.repo.id).toBe("local_local_uploaded_tool");
-      expect(registered.fileCount).toBe(2);
-      expect(registered.source).toBe("uploaded-files");
-      expect(registered.worktreeRoot).toBe(
-        path.join(cacheRoot, registered.repo.id),
+      expect(registered.value.repo.id).toBe("local_local_uploaded_tool");
+      expect(registered.value.fileCount).toBe(2);
+      expect(registered.value.source).toBe("uploaded-files");
+      expect(registered.value.worktreeRoot).toBe(
+        path.join(cacheRoot, registered.value.repo.id),
       );
       expect(
-        store.repoFiles.get(registered.repo.id)?.map((file) => file.path),
+        store.repoFiles.get(registered.value.repo.id)?.map((file) => file.path),
       ).toEqual(["package.json", "src/index.ts"]);
       await expect(
-        readFile(path.join(registered.worktreeRoot, "src/index.ts"), "utf8"),
+        readFile(
+          path.join(registered.value.worktreeRoot ?? "", "src/index.ts"),
+          "utf8",
+        ),
       ).resolves.toBe("export const ok = true;\n");
       await expect(
         readFile(path.join(cacheRoot, "secret.txt"), "utf8"),
@@ -124,6 +128,45 @@ describe("repository source analysis registry", () => {
     } finally {
       await rm(cacheRoot, { recursive: true, force: true });
     }
+  });
+
+  it("uses injectable materialization and mounted-worktree ports", async () => {
+    const store = new MemoryStore();
+    const materialized: Array<{ repoId: string; paths: string[] }> = [];
+    const lifecycle = createRepositorySourceLifecycle({
+      store,
+      mountedWorktrees: async () => null,
+      materializeFiles: async ({ repoId, files }) => {
+        materialized.push({
+          repoId,
+          paths: files.map((file) => file.path),
+        });
+        return `/virtual-cache/${repoId}`;
+      },
+    });
+
+    const registered = await lifecycle.register({
+      kind: "uploaded-files",
+      name: "virtual-tool",
+      files: [
+        { path: "/package.json", content: '{"name":"virtual-tool"}' },
+        { path: "../secret.txt", content: "nope" },
+      ],
+    });
+
+    expect(registered.ok).toBe(true);
+    if (!registered.ok) {
+      return;
+    }
+    expect(registered.value.worktreeRoot).toBe(
+      "/virtual-cache/local_local_virtual_tool",
+    );
+    expect(materialized).toEqual([
+      {
+        repoId: "local_local_virtual_tool",
+        paths: ["package.json"],
+      },
+    ]);
   });
 
   it("uses a mounted worktree when browser uploads match it", async () => {
@@ -139,10 +182,10 @@ describe("repository source analysis registry", () => {
       },
     });
     process.env.OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS = repoRoot;
-    const registry = createRepositorySourceAnalysisRegistry({ store });
+    const lifecycle = createRepositorySourceLifecycle({ store });
 
     try {
-      const registered = await registry.registerSource({
+      const registered = await lifecycle.register({
         kind: "uploaded-files",
         name: "mounted-dashboard-tool",
         files: [
@@ -157,10 +200,10 @@ describe("repository source analysis registry", () => {
       if (!registered.ok) {
         return;
       }
-      expect(registered.source).toBe("uploaded-files-mounted-worktree");
-      expect(registered.worktreeRoot).toBe(repoRoot);
-      expect(registered.repo.defaultBranch).toBe("feature/context-base");
-      expect(store.repoFiles.get(registered.repo.id)).toContainEqual({
+      expect(registered.value.source).toBe("uploaded-files-mounted-worktree");
+      expect(registered.value.worktreeRoot).toBe(repoRoot);
+      expect(registered.value.repo.defaultBranch).toBe("feature/context-base");
+      expect(store.repoFiles.get(registered.value.repo.id)).toContainEqual({
         path: "src/index.ts",
         content: "export const mounted = true;\n",
       });
@@ -171,8 +214,8 @@ describe("repository source analysis registry", () => {
 
   it("tracks analysis runs, profile versions, and lazy profile reuse", async () => {
     const store = new MemoryStore();
-    const registry = createRepositorySourceAnalysisRegistry({ store });
-    const registered = await registry.registerSource({
+    const lifecycle = createRepositorySourceLifecycle({ store });
+    const registered = await lifecycle.register({
       kind: "uploaded-files",
       name: "profile-tool",
       files: [
@@ -190,122 +233,129 @@ describe("repository source analysis registry", () => {
       return;
     }
 
-    const firstAnalysis = await registry.analyzeRepository({
-      repoId: registered.repo.id,
+    const firstAnalysis = await lifecycle.prepare({
+      repoId: registered.value.repo.id,
+      intent: { kind: "analyze", profile: "refresh" },
     });
     expect(firstAnalysis.ok).toBe(true);
     if (!firstAnalysis.ok) {
       return;
     }
-    expect(firstAnalysis.run.status).toBe("succeeded");
-    expect(firstAnalysis.run.repoProfileVersion).toBe(1);
-    expect(firstAnalysis.profile.frameworks).toContain("fastify");
+    expect(firstAnalysis.value.run?.status).toBe("succeeded");
+    expect(firstAnalysis.value.run?.repoProfileVersion).toBe(1);
+    expect(firstAnalysis.value.profile.frameworks).toContain("fastify");
 
-    const runsBeforeEnsure = store.listRuns(registered.repo.id).length;
-    const ensuredExisting = await registry.ensureProfile({
-      repoId: registered.repo.id,
-    });
-    expect(ensuredExisting.ok).toBe(true);
-    if (!ensuredExisting.ok) {
-      return;
-    }
-    expect(ensuredExisting.created).toBe(false);
-    expect(ensuredExisting.run).toBeUndefined();
-    expect(store.listRuns(registered.repo.id)).toHaveLength(runsBeforeEnsure);
-
-    const reusedWorkspace = await registry.prepareAnalysis({
-      repoId: registered.repo.id,
-      profilePolicy: "reuse",
+    const runsBeforeReuse = store.listRuns(registered.value.repo.id).length;
+    const reusedWorkspace = await lifecycle.prepare({
+      repoId: registered.value.repo.id,
+      intent: { kind: "analyze", profile: "reuse-or-create" },
     });
     expect(reusedWorkspace.ok).toBe(true);
     if (!reusedWorkspace.ok) {
       return;
     }
-    expect(reusedWorkspace.profileCreated).toBe(false);
-    expect(reusedWorkspace.run).toBeUndefined();
-    expect(reusedWorkspace.files[0]?.path).toBe("package.json");
+    expect(reusedWorkspace.value.profileCreated).toBe(false);
+    expect(reusedWorkspace.value.run).toBeNull();
+    expect(reusedWorkspace.value.files[0]?.path).toBe("package.json");
+    expect(store.listRuns(registered.value.repo.id)).toHaveLength(
+      runsBeforeReuse,
+    );
 
-    const refreshedWorkspace = await registry.prepareAnalysis({
-      repoId: registered.repo.id,
-      profilePolicy: "refresh",
-      createdRunMessage: "Repository profile refreshed for test.",
+    const refreshedWorkspace = await lifecycle.prepare({
+      repoId: registered.value.repo.id,
+      intent: { kind: "analyze", profile: "refresh" },
     });
     expect(refreshedWorkspace.ok).toBe(true);
     if (!refreshedWorkspace.ok) {
       return;
     }
-    expect(refreshedWorkspace.profileCreated).toBe(true);
-    expect(refreshedWorkspace.profile.version).toBe(2);
-    expect(refreshedWorkspace.run?.safeMessage).toBe(
-      "Repository profile refreshed for test.",
+    expect(refreshedWorkspace.value.profileCreated).toBe(true);
+    expect(refreshedWorkspace.value.profile.version).toBe(2);
+    expect(refreshedWorkspace.value.run?.safeMessage).toBe(
+      "Repository profile generated.",
     );
   });
 
-  it("prepares generation, review, and context PR workspaces", async () => {
+  it("prepares generation, review, and context PR workspaces by intent", async () => {
     const store = new MemoryStore();
-    const registry = createRepositorySourceAnalysisRegistry({ store });
-    const registered = await registry.registerSource({
-      kind: "uploaded-files",
-      name: "workspace-tool",
-      files: [
-        {
-          path: "package.json",
-          content: JSON.stringify({
-            name: "workspace-tool",
-            scripts: { test: "bun test" },
-          }),
-        },
-      ],
+    const lifecycle = createRepositorySourceLifecycle({ store });
+    const repoRoot = await createGitRepository("workspace-tool", {
+      branch: "main",
+      files: {
+        "package.json": JSON.stringify({
+          name: "workspace-tool",
+          scripts: { test: "bun test" },
+        }),
+      },
     });
-    expect(registered.ok).toBe(true);
-    if (!registered.ok) {
-      return;
-    }
 
-    const missingGeneration = await registry.prepareGeneration({
-      repoId: registered.repo.id,
-    });
-    expect(missingGeneration.ok).toBe(false);
-    if (!missingGeneration.ok) {
-      expect(missingGeneration.code).toBe("NO_PROFILE");
-    }
+    try {
+      const registered = await lifecycle.register({
+        kind: "local-worktree",
+        repoRoot,
+        owner: "local",
+      });
+      expect(registered.ok).toBe(true);
+      if (!registered.ok) {
+        return;
+      }
 
-    const analysis = await registry.prepareAnalysis({
-      repoId: registered.repo.id,
-      profilePolicy: "refresh",
-    });
-    expect(analysis.ok).toBe(true);
-    if (!analysis.ok) {
-      return;
-    }
-    const generation = await registry.prepareGeneration({
-      repoId: registered.repo.id,
-    });
-    expect(generation.ok).toBe(true);
-    if (!generation.ok) {
-      return;
-    }
-    expect(generation.profile.version).toBe(analysis.profile.version);
-    expect(generation.files.map((file) => file.path)).toEqual(["package.json"]);
-    expect(generation.worktreeRoot).toBe(registered.worktreeRoot);
+      const missingGeneration = await lifecycle.prepare({
+        repoId: registered.value.repo.id,
+        intent: { kind: "generate-context" },
+      });
+      expect(missingGeneration.ok).toBe(false);
+      if (!missingGeneration.ok) {
+        expect(missingGeneration.error.code).toBe("NO_PROFILE");
+      }
 
-    const review = await registry.prepareReview({ repoId: registered.repo.id });
-    expect(review.ok).toBe(true);
-    if (!review.ok) {
-      return;
-    }
-    expect(review.profileCreated).toBe(false);
-    expect(review.worktreeRoot).toBe(registered.worktreeRoot);
+      const analysis = await lifecycle.prepare({
+        repoId: registered.value.repo.id,
+        intent: { kind: "analyze", profile: "refresh" },
+      });
+      expect(analysis.ok).toBe(true);
+      if (!analysis.ok) {
+        return;
+      }
+      const generation = await lifecycle.prepare({
+        repoId: registered.value.repo.id,
+        intent: { kind: "generate-context" },
+      });
+      expect(generation.ok).toBe(true);
+      if (!generation.ok) {
+        return;
+      }
+      expect(generation.value.profile.version).toBe(
+        analysis.value.profile.version,
+      );
+      expect(generation.value.files.map((file) => file.path)).toEqual([
+        "package.json",
+      ]);
+      expect(generation.value.worktreeRoot).toBe(repoRoot);
 
-    const contextPr = await registry.prepareContextPr({
-      repoId: registered.repo.id,
-      requireWritableWorktree: true,
-    });
-    expect(contextPr.ok).toBe(true);
-    if (!contextPr.ok) {
-      return;
+      const review = await lifecycle.prepare({
+        repoId: registered.value.repo.id,
+        intent: { kind: "review-preview" },
+      });
+      expect(review.ok).toBe(true);
+      if (!review.ok) {
+        return;
+      }
+      expect(review.value.profileCreated).toBe(false);
+      expect(review.value.worktreeRoot).toBe(repoRoot);
+
+      const contextPr = await lifecycle.prepare({
+        repoId: registered.value.repo.id,
+        intent: { kind: "context-pr", requireWritableWorktree: true },
+      });
+      expect(contextPr.ok).toBe(true);
+      if (!contextPr.ok) {
+        return;
+      }
+      expect(contextPr.value.worktreeRoot).toBe(repoRoot);
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true });
     }
-    expect(contextPr.worktreeRoot).toBe(registered.worktreeRoot);
   });
 
   it("reports a domain error when context PR preparation requires a missing worktree", async () => {
@@ -318,55 +368,61 @@ describe("repository source analysis registry", () => {
         content: JSON.stringify({ scripts: { test: "bun test" } }),
       },
     ]);
-    const registry = createRepositorySourceAnalysisRegistry({ store });
+    const lifecycle = createRepositorySourceLifecycle({ store });
 
-    const analysis = await registry.prepareAnalysis({
+    const analysis = await lifecycle.prepare({
       repoId: repo.id,
-      profilePolicy: "refresh",
+      intent: { kind: "analyze", profile: "refresh" },
     });
     expect(analysis.ok).toBe(true);
     if (!analysis.ok) {
       return;
     }
 
-    const contextPr = await registry.prepareContextPr({
+    const contextPr = await lifecycle.prepare({
       repoId: repo.id,
-      requireWritableWorktree: true,
+      intent: { kind: "context-pr", requireWritableWorktree: true },
     });
     expect(contextPr.ok).toBe(false);
     if (!contextPr.ok) {
-      expect(contextPr.statusCode).toBe(409);
-      expect(contextPr.code).toBe("WORKTREE_UNAVAILABLE");
+      expect(contextPr.error.statusCode).toBe(409);
+      expect(contextPr.error.code).toBe("WORKTREE_UNAVAILABLE");
     }
   });
 
   it("returns domain errors for unknown and unavailable repositories", async () => {
     const store = new MemoryStore();
-    const registry = createRepositorySourceAnalysisRegistry({ store });
+    const lifecycle = createRepositorySourceLifecycle({ store });
 
-    const unknown = await registry.analyzeRepository({ repoId: "missing" });
+    const unknown = await lifecycle.prepare({
+      repoId: "missing",
+      intent: { kind: "analyze", profile: "refresh" },
+    });
     expect(unknown.ok).toBe(false);
     if (!unknown.ok) {
-      expect(unknown.statusCode).toBe(404);
-      expect(unknown.code).toBe("UNKNOWN_REPO");
+      expect(unknown.error.statusCode).toBe(404);
+      expect(unknown.error.code).toBe("UNKNOWN_REPO");
     }
 
     const repo = remoteRepo("remote_unseeded");
     store.repos.set(repo.id, repo);
-    const unavailable = await registry.analyzeRepository({ repoId: repo.id });
+    const unavailable = await lifecycle.prepare({
+      repoId: repo.id,
+      intent: { kind: "analyze", profile: "refresh" },
+    });
     expect(unavailable.ok).toBe(false);
     if (!unavailable.ok) {
-      expect(unavailable.statusCode).toBe(409);
-      expect(unavailable.code).toBe("REPOSITORY_FILES_UNAVAILABLE");
-      expect(unavailable.run?.status).toBe("failed");
+      expect(unavailable.error.statusCode).toBe(409);
+      expect(unavailable.error.code).toBe("REPOSITORY_FILES_UNAVAILABLE");
+      expect(unavailable.error.run?.status).toBe("failed");
     }
   });
 
-  it("creates missing profiles with a fake remote fetcher", async () => {
+  it("fetches GitHub App files, caches them, and creates missing profiles", async () => {
     const store = new MemoryStore();
     const repo = remoteRepo("remote_seeded");
     store.repos.set(repo.id, repo);
-    const registry = createRepositorySourceAnalysisRegistry({
+    const lifecycle = createRepositorySourceLifecycle({
       store,
       getInstallationAuth: () => ({
         appId: "1",
@@ -388,18 +444,22 @@ describe("repository source analysis registry", () => {
       },
     });
 
-    const ensured = await registry.ensureProfile({
+    const prepared = await lifecycle.prepare({
       repoId: repo.id,
-      ref: "feature/base",
+      intent: {
+        kind: "review-preview",
+        baseRef: "feature/base",
+      },
     });
 
-    expect(ensured.ok).toBe(true);
-    if (!ensured.ok) {
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
       return;
     }
-    expect(ensured.created).toBe(true);
-    expect(ensured.run?.status).toBe("succeeded");
-    expect(ensured.profile.frameworks).toContain("next");
+    expect(prepared.value.profileCreated).toBe(true);
+    expect(prepared.value.run?.status).toBe("succeeded");
+    expect(prepared.value.source).toBe("github-app");
+    expect(prepared.value.profile.frameworks).toContain("next");
     expect(store.repoFiles.get(repo.id)?.[0]?.path).toBe("package.json");
   });
 });
