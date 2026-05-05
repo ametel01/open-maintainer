@@ -4,6 +4,7 @@ import {
   type AnalyzerFile,
   type RepositoryWorkspaceDeps,
   createRepositoryWorkspace,
+  parseGitHubRepositoryUrl,
 } from "@open-maintainer/analyzer";
 import type { RepoProfile } from "@open-maintainer/shared";
 import { describe, expect, it } from "vitest";
@@ -134,6 +135,37 @@ describe("repository workspace", () => {
     expect(profile.owner).toBe("fallback-owner");
     expect(profile.name).toBe("fallback-name");
     expect(profile.defaultBranch).toBe("main");
+  });
+});
+
+describe("GitHub repository URL references", () => {
+  it("parses HTTPS GitHub repository URLs with or without .git", () => {
+    expect(
+      parseGitHubRepositoryUrl("https://github.com/Open-Maintainer/tool"),
+    ).toEqual({
+      owner: "Open-Maintainer",
+      name: "tool",
+      htmlUrl: "https://github.com/Open-Maintainer/tool",
+      cloneUrl: "https://github.com/Open-Maintainer/tool.git",
+    });
+    expect(
+      parseGitHubRepositoryUrl("https://github.com/Open-Maintainer/tool.git"),
+    ).toEqual({
+      owner: "Open-Maintainer",
+      name: "tool",
+      htmlUrl: "https://github.com/Open-Maintainer/tool",
+      cloneUrl: "https://github.com/Open-Maintainer/tool.git",
+    });
+  });
+
+  it("rejects unsupported URL shapes", () => {
+    expect(
+      parseGitHubRepositoryUrl("https://github.com/acme/tool/pull/1"),
+    ).toBe(null);
+    expect(
+      parseGitHubRepositoryUrl("https://example.com/acme/tool"),
+    ).toBeNull();
+    expect(parseGitHubRepositoryUrl("/tmp/acme/tool")).toBeNull();
   });
 });
 

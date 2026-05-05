@@ -7,6 +7,10 @@ import { IssueTriageResultSchema } from "@open-maintainer/shared";
 import { describe, expect, it } from "vitest";
 import { repoRoot, runCli } from "./helpers/cli";
 import { createFakeCodexCli } from "./helpers/fake-model-cli";
+import {
+  createBareRemoteFromWorktree,
+  createGitHubUrlRewrite,
+} from "./helpers/git-url";
 
 const execFileAsync = promisify(execFile);
 
@@ -473,6 +477,52 @@ describe("CLI issue triage", () => {
         "utf8",
       ),
     ).rejects.toThrow();
+    const ghCalls = await readFile(fakeGh.callsPath, "utf8");
+    expect(ghCalls).not.toContain('"POST"');
+    expect(ghCalls).not.toContain('"PATCH"');
+  });
+
+  it("previews single-issue triage for a GitHub URL checkout", async () => {
+    const fixture = await createTriageRepo();
+    const remote = await createBareRemoteFromWorktree(fixture);
+    const rewrite = await createGitHubUrlRewrite({
+      owner: "acme",
+      repo: "triage-fixture",
+      remotePath: remote,
+    });
+    const fakeCodex = await createFakeCodexCli();
+    const fakeGh = await createFakeGhCli();
+
+    const result = await runCli(
+      [
+        "triage",
+        "issue",
+        rewrite.url,
+        "--number",
+        "42",
+        "--model",
+        "codex",
+        "--allow-model-content-transfer",
+        "--dry-run",
+      ],
+      { ...rewrite.env, ...fakeCodex.env, ...fakeGh.env },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("Open Maintainer issue triage");
+    expect(result.stdout).toContain("Mode: dry-run");
+    expect(result.stdout).toContain(
+      "Artifact: .open-maintainer/triage/issues/42.json (planned)",
+    );
+    expect(result.stdout).toContain("GitHub URL workspace");
+    expect(result.stdout).toContain(`Source: ${rewrite.url}`);
+    expect(result.stdout).toContain(
+      "Artifacts: none written because this was a dry run",
+    );
+    const checkoutPath = extractTemporaryCheckoutPath(result.stdout);
+    expect(checkoutPath).toBeTruthy();
+    await expect(readFile(checkoutPath as string, "utf8")).rejects.toThrow();
     const ghCalls = await readFile(fakeGh.callsPath, "utf8");
     expect(ghCalls).not.toContain('"POST"');
     expect(ghCalls).not.toContain('"PATCH"');
@@ -1259,6 +1309,53 @@ describe("CLI issue triage", () => {
     expect(ghCalls).not.toContain('"PATCH"');
   });
 
+  it("previews batch issue triage for a GitHub URL checkout", async () => {
+    const fixture = await createTriageRepo();
+    const remote = await createBareRemoteFromWorktree(fixture);
+    const rewrite = await createGitHubUrlRewrite({
+      owner: "acme",
+      repo: "triage-fixture",
+      remotePath: remote,
+    });
+    const fakeCodex = await createFakeCodexCli();
+    const fakeGh = await createFakeGhCli();
+
+    const result = await runCli(
+      [
+        "triage",
+        "issues",
+        rewrite.url,
+        "--limit",
+        "5",
+        "--model",
+        "codex",
+        "--allow-model-content-transfer",
+        "--dry-run",
+      ],
+      {
+        ...rewrite.env,
+        ...fakeCodex.env,
+        ...fakeGh.env,
+        OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE: "all-classifications",
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("Open Maintainer issue triage batch");
+    expect(result.stdout).toContain("Mode: dry-run");
+    expect(result.stdout).toContain("Scanned 5 open issues");
+    expect(result.stdout).toContain("#46 Best crypto casino bonus partnership");
+    expect(result.stdout).toContain("GitHub URL workspace");
+    expect(result.stdout).toContain(`Source: ${rewrite.url}`);
+    const checkoutPath = extractTemporaryCheckoutPath(result.stdout);
+    expect(checkoutPath).toBeTruthy();
+    await expect(readFile(checkoutPath as string, "utf8")).rejects.toThrow();
+    const ghCalls = await readFile(fakeGh.callsPath, "utf8");
+    expect(ghCalls).not.toContain('"POST"');
+    expect(ghCalls).not.toContain('"PATCH"');
+  });
+
   it("skips already labelled issues and keeps paging until the batch limit is filled", async () => {
     const fixture = await createTriageRepo();
     const fakeCodex = await createFakeCodexCli();
@@ -1628,3 +1725,15 @@ describe("CLI issue triage", () => {
     expect(result.stderr).toContain("evidence");
   });
 });
+
+function extractTemporaryCheckoutPath(output: string): string | null {
+  const line = output
+    .split(/\r?\n/)
+    .find((item) => item.includes("Temporary checkout:"));
+  return (
+    line
+      ?.replace(/^.*Temporary checkout: /, "")
+      .replace(/ \(removed\).*$/, "")
+      .trim() ?? null
+  );
+}

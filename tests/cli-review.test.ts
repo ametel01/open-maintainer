@@ -7,6 +7,7 @@ import { ReviewResultSchema } from "@open-maintainer/shared";
 import { describe, expect, it } from "vitest";
 import { repoRoot, runCli } from "./helpers/cli";
 import { createFakeCodexCli } from "./helpers/fake-model-cli";
+import { createGitHubUrlRewrite } from "./helpers/git-url";
 
 const execFileAsync = promisify(execFile);
 
@@ -52,7 +53,7 @@ async function createReviewRepo(): Promise<string> {
 async function attachPullRequestRemote(
   directory: string,
   prNumber: number,
-): Promise<{ baseSha: string; headSha: string }> {
+): Promise<{ baseSha: string; headSha: string; remotePath: string }> {
   const remote = await mkdtemp(path.join(tmpdir(), "om-cli-review-remote-"));
   await execFileAsync("git", ["init", "--bare"], { cwd: remote });
   await execFileAsync("git", ["remote", "add", "origin", remote], {
@@ -74,7 +75,11 @@ async function attachPullRequestRemote(
     ["update-ref", `refs/pull/${prNumber}/head`, headSha.trim()],
     { cwd: remote },
   );
-  return { baseSha: baseSha.trim(), headSha: headSha.trim() };
+  return {
+    baseSha: baseSha.trim(),
+    headSha: headSha.trim(),
+    remotePath: remote,
+  };
 }
 
 async function createFakeGhCli(input: {
@@ -497,6 +502,58 @@ describe("CLI review", () => {
     );
   });
 
+  it("reviews a GitHub URL pull request from a temporary checkout", async () => {
+    const fixture = await createReviewRepo();
+    const prNumber = 12;
+    const refs = await attachPullRequestRemote(fixture, prNumber);
+    const rewrite = await createGitHubUrlRewrite({
+      owner: "Open-Maintainer",
+      repo: "cli-review-fixture",
+      remotePath: refs.remotePath,
+    });
+    const fakeCodex = await createFakeCodexCli();
+    const fakeGh = await createFakeGhCli({ prNumber, ...refs });
+
+    const result = await runCli(
+      [
+        "review",
+        rewrite.url,
+        "--pr",
+        String(prNumber),
+        "--model",
+        "codex",
+        "--allow-model-content-transfer",
+        "--dry-run",
+      ],
+      {
+        ...rewrite.env,
+        ...fakeCodex.env,
+        ...fakeGh.env,
+        OPEN_MAINTAINER_FAKE_CODEX_FINDING: "1",
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("Review generated for pull request #12.");
+    expect(result.stdout).toContain("Dry run: no PR comments posted.");
+    expect(result.stdout).toContain("GitHub URL workspace");
+    expect(result.stdout).toContain(`Source: ${rewrite.url}`);
+    expect(result.stdout).toContain(
+      "Artifacts: none written because this was a dry run",
+    );
+    const checkoutPath = extractTemporaryCheckoutPath(result.stdout);
+    expect(checkoutPath).toBeTruthy();
+    await expect(readFile(checkoutPath as string, "utf8")).rejects.toThrow();
+    const calls = await readFile(fakeGh.callsPath, "utf8").catch(() => "");
+    expect(calls).not.toContain(
+      "repos/Open-Maintainer/cli-review-fixture/issues/12/comments",
+    );
+    expect(calls).not.toContain(
+      "repos/Open-Maintainer/cli-review-fixture/pulls/12/reviews",
+    );
+  });
+
   it("applies a filterable contribution triage label to a pull request", async () => {
     const fixture = await createReviewRepo();
     const prNumber = 12;
@@ -647,3 +704,15 @@ describe("CLI review", () => {
     );
   });
 });
+
+function extractTemporaryCheckoutPath(output: string): string | null {
+  const line = output
+    .split(/\r?\n/)
+    .find((item) => item.includes("Temporary checkout:"));
+  return (
+    line
+      ?.replace(/^.*Temporary checkout: /, "")
+      .replace(/ \(removed\).*$/, "")
+      .trim() ?? null
+  );
+}

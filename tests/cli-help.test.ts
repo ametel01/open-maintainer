@@ -12,6 +12,7 @@ describe("CLI help", () => {
       expect(result.stderr).toBe("");
       expect(result.stdout).toContain("open-maintainer <command> <repo>");
       expect(result.stdout).toContain("open-maintainer help <command>");
+      expect(result.stdout).toContain("https://github.com/OWNER/REPO");
     }
   });
 
@@ -89,6 +90,26 @@ describe("CLI help", () => {
     expect(result.stdout).toContain("--review-apply-triage-label");
     expect(result.stdout).toContain("--review-create-triage-labels");
     expect(result.stdout).toContain("Local ref review is non-mutating");
+    expect(result.stdout).toContain(
+      "open-maintainer review https://github.com/OWNER/REPO",
+    );
+  });
+
+  it("documents URL-backed audit and triage examples", async () => {
+    const audit = await runCli(["help", "audit"]);
+    expect(audit.exitCode).toBe(0);
+    expect(audit.stdout).toContain(
+      "open-maintainer audit https://github.com/OWNER/REPO",
+    );
+
+    const triage = await runCli(["help", "triage"]);
+    expect(triage.exitCode).toBe(0);
+    expect(triage.stdout).toContain(
+      "open-maintainer triage issue https://github.com/OWNER/REPO",
+    );
+    expect(triage.stdout).toContain(
+      "open-maintainer triage issues https://github.com/OWNER/REPO",
+    );
   });
 
   it("keeps README command flags aligned with CLI help", async () => {

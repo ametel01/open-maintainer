@@ -1,14 +1,22 @@
+import { execFile } from "node:child_process";
 import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { repoRoot, runCli } from "./helpers/cli";
 import {
   codexGenerateArgs,
   createFakeCodexCli,
 } from "./helpers/fake-model-cli";
+import {
+  createArtifactRoot,
+  createBareRemoteFromWorktree,
+  createGitHubUrlRewrite,
+} from "./helpers/git-url";
 
 const fixtureRoot = path.join(repoRoot, "tests/fixtures/low-context-ts");
+const execFileAsync = promisify(execFile);
 
 describe("CLI audit", () => {
   it("prints concrete next steps for missing readiness items", async () => {
@@ -72,6 +80,63 @@ describe("CLI audit", () => {
     await expect(
       readFile(path.join(workdir, ".open-maintainer/report.md"), "utf8"),
     ).rejects.toThrow();
+  });
+
+  it("audits a GitHub URL checkout and copies artifacts before cleanup", async () => {
+    const workdir = await mkdtemp(
+      path.join(tmpdir(), "open-maintainer-audit-url-source-"),
+    );
+    await cp(fixtureRoot, workdir, { recursive: true });
+    await initializeGitWorktree(workdir);
+    const remote = await createBareRemoteFromWorktree(workdir);
+    const rewrite = await createGitHubUrlRewrite({
+      owner: "acme",
+      repo: "low-context-url",
+      remotePath: remote,
+    });
+    const artifactRoot = await createArtifactRoot();
+
+    const result = await runCli(["audit", rewrite.gitUrl], {
+      ...rewrite.env,
+      OPEN_MAINTAINER_REMOTE_ARTIFACT_ROOT: artifactRoot,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("Open Maintainer audit");
+    expect(result.stdout).toContain("GitHub URL workspace");
+    expect(result.stdout).toContain(`Source: ${rewrite.url}`);
+    expect(result.stdout).toContain("Temporary checkout:");
+    expect(result.stdout).toContain("(removed)");
+    expect(result.stdout).toContain("Artifacts copied to:");
+    expect(result.stdout).toContain("- .open-maintainer");
+    const checkoutPath = extractTemporaryCheckoutPath(result.stdout);
+    expect(checkoutPath).toBeTruthy();
+    await expect(readFile(checkoutPath as string, "utf8")).rejects.toThrow();
+    const profile = JSON.parse(
+      await readFile(
+        path.join(
+          artifactRoot,
+          "acme",
+          "low-context-url",
+          ".open-maintainer/profile.json",
+        ),
+        "utf8",
+      ),
+    ) as { owner: string; name: string };
+    expect(profile.owner).toBe("acme");
+    expect(profile.name).toBe("low-context-url");
+    await expect(
+      readFile(
+        path.join(
+          artifactRoot,
+          "acme",
+          "low-context-url",
+          ".open-maintainer/report.md",
+        ),
+        "utf8",
+      ),
+    ).resolves.toContain("# Open Maintainer Report: acme/low-context-url");
   });
 
   it("re-audits after init generates context artifacts", async () => {
@@ -295,3 +360,27 @@ describe("CLI audit", () => {
     );
   });
 });
+
+async function initializeGitWorktree(workdir: string): Promise<void> {
+  await execFileAsync("git", ["init", "-b", "main"], { cwd: workdir });
+  await execFileAsync("git", ["config", "user.email", "test@example.com"], {
+    cwd: workdir,
+  });
+  await execFileAsync("git", ["config", "user.name", "Test User"], {
+    cwd: workdir,
+  });
+  await execFileAsync("git", ["add", "."], { cwd: workdir });
+  await execFileAsync("git", ["commit", "-m", "initial"], { cwd: workdir });
+}
+
+function extractTemporaryCheckoutPath(output: string): string | null {
+  const line = output
+    .split(/\r?\n/)
+    .find((item) => item.includes("Temporary checkout:"));
+  return (
+    line
+      ?.replace(/^.*Temporary checkout: /, "")
+      .replace(/ \(removed\).*$/, "")
+      .trim() ?? null
+  );
+}
