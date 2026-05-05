@@ -1,19 +1,16 @@
 "use client";
 
 import {
+  type RepositoryIgnoreRule,
   type RepositoryUploadFile,
+  buildRepositoryIgnoreRules,
+  isRepositoryPathIgnored,
+  repositoryIgnoreFileNames,
   repositoryUploadLimits,
   shouldAlwaysSkipRepositoryUploadPath,
   shouldReadRepositoryUploadPath,
 } from "@open-maintainer/shared";
 import { useRef, useState } from "react";
-
-type GitignoreRule = {
-  pattern: string;
-  negated: boolean;
-  directoryOnly: boolean;
-  anchored: boolean;
-};
 
 export function LocalRepoPicker({ error }: { error?: string | undefined }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -27,7 +24,7 @@ export function LocalRepoPicker({ error }: { error?: string | undefined }) {
     try {
       const selected = Array.from(files);
       const rootName = rootDirectoryName(selected);
-      const gitignoreRules = await readRootGitignoreRules(selected, rootName);
+      const ignoreRules = await readRootIgnoreRules(selected, rootName);
       const uploaded: RepositoryUploadFile[] = [];
       for (const file of selected) {
         if (uploaded.length >= repositoryUploadLimits.maxFiles) {
@@ -38,7 +35,7 @@ export function LocalRepoPicker({ error }: { error?: string | undefined }) {
         if (
           !repoPath ||
           file.size > repositoryUploadLimits.maxFileBytes ||
-          shouldSkipPath(repoPath, gitignoreRules) ||
+          shouldSkipPath(repoPath, ignoreRules) ||
           !shouldReadRepositoryUploadPath(repoPath)
         ) {
           continue;
@@ -131,105 +128,30 @@ function stripRootDirectory(relativePath: string, rootName: string): string {
     : relativePath;
 }
 
-async function readRootGitignoreRules(
+async function readRootIgnoreRules(
   files: File[],
   rootName: string,
-): Promise<GitignoreRule[]> {
-  const gitignore = files.find(
-    (file) =>
-      stripRootDirectory(repoRelativePath(file), rootName) === ".gitignore",
+): Promise<RepositoryIgnoreRule[]> {
+  const ignoreFiles = await Promise.all(
+    files
+      .map((file) => ({
+        file,
+        path: stripRootDirectory(repoRelativePath(file), rootName),
+      }))
+      .filter(({ path }) =>
+        repositoryIgnoreFileNames.some((name) => path === name),
+      )
+      .map(async ({ file, path }) => ({ path, content: await file.text() })),
   );
-  return gitignore ? parseGitignore(await gitignore.text()) : [];
+  return buildRepositoryIgnoreRules(ignoreFiles);
 }
 
 function shouldSkipPath(
   relativePath: string,
-  gitignoreRules: GitignoreRule[],
+  ignoreRules: RepositoryIgnoreRule[],
 ): boolean {
   return (
     shouldAlwaysSkipRepositoryUploadPath(relativePath) ||
-    isIgnoredByGitignore(relativePath, gitignoreRules)
+    isRepositoryPathIgnored(relativePath, ignoreRules)
   );
-}
-
-function parseGitignore(content: string): GitignoreRule[] {
-  return content
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.startsWith("#"))
-    .map((line) => {
-      const negated = line.startsWith("!");
-      const rawPattern = negated ? line.slice(1) : line;
-      const anchored = rawPattern.startsWith("/");
-      const directoryOnly =
-        rawPattern.endsWith("/") || rawPattern.endsWith("/**");
-      const pattern = rawPattern
-        .replace(/^\/+/, "")
-        .replace(/\/\*\*$/, "")
-        .replace(/\/$/, "");
-      return { pattern, negated, directoryOnly, anchored };
-    })
-    .filter((rule) => rule.pattern.length > 0);
-}
-
-function isIgnoredByGitignore(
-  relativePath: string,
-  rules: GitignoreRule[],
-): boolean {
-  let ignored = false;
-  for (const rule of rules) {
-    if (matchesGitignoreRule(relativePath, rule)) {
-      ignored = !rule.negated;
-    }
-  }
-  return ignored;
-}
-
-function matchesGitignoreRule(
-  relativePath: string,
-  rule: GitignoreRule,
-): boolean {
-  const pathParts = relativePath.split("/");
-  if (rule.directoryOnly) {
-    return rule.pattern.includes("/")
-      ? matchesPathOrDescendant(relativePath, rule.pattern, rule.anchored)
-      : pathParts.some((part) => wildcardMatch(rule.pattern, part));
-  }
-  if (rule.pattern.includes("/")) {
-    return matchesPath(relativePath, rule.pattern, rule.anchored);
-  }
-  return pathParts.some((part) => wildcardMatch(rule.pattern, part));
-}
-
-function matchesPath(
-  relativePath: string,
-  pattern: string,
-  anchored: boolean,
-): boolean {
-  return anchored
-    ? wildcardMatch(pattern, relativePath)
-    : relativePath
-        .split("/")
-        .some((_, index, parts) =>
-          wildcardMatch(pattern, parts.slice(index).join("/")),
-        );
-}
-
-function matchesPathOrDescendant(
-  relativePath: string,
-  pattern: string,
-  anchored: boolean,
-): boolean {
-  return (
-    matchesPath(relativePath, pattern, anchored) ||
-    matchesPath(relativePath, `${pattern}/*`, anchored)
-  );
-}
-
-function wildcardMatch(pattern: string, value: string): boolean {
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  const regex = new RegExp(
-    `^${escaped.replaceAll("*", "[^/]*").replaceAll("?", "[^/]")}$`,
-  );
-  return regex.test(value);
 }

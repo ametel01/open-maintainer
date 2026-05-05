@@ -51,6 +51,42 @@ describe("CLI audit", () => {
     );
   });
 
+  it("surfaces .open-maintainer.yml diagnostics during audit", async () => {
+    const workdir = await mkdtemp(
+      path.join(tmpdir(), "open-maintainer-audit-config-"),
+    );
+    await cp(fixtureRoot, workdir, { recursive: true });
+    await writeFile(
+      path.join(workdir, ".open-maintainer.yml"),
+      `
+version: 1
+repo:
+  profileVersion: 1
+  defaultBranch: main
+retention:
+  localArtifactsMaxAgeDays: 7
+  typo: ignored
+unknownTopLevel: true
+generated:
+  by: open-maintainer
+  artifactVersion: 2
+  generatedAt: "2026-05-04T00:00:00.000Z"
+`,
+    );
+
+    const result = await runCli(["audit", workdir, "--dry-run"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("Config diagnostics");
+    expect(result.stdout).toContain(
+      "Unknown config key 'unknownTopLevel' will be ignored.",
+    );
+    expect(result.stdout).toContain(
+      "Unknown config key 'retention.typo' will be ignored.",
+    );
+  });
+
   it("previews audit outputs without writing files in dry-run mode", async () => {
     const workdir = await mkdtemp(
       path.join(tmpdir(), "open-maintainer-audit-dry-run-"),

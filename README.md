@@ -120,6 +120,17 @@ bun run cli review /path/to/repo \
   --output-path .open-maintainer/review.md
 ```
 
+Print compact numbered feedback intended for an agent loop:
+
+```sh
+bun run cli review /path/to/repo \
+  --base-ref origin/main \
+  --head-ref HEAD \
+  --model codex \
+  --allow-model-content-transfer \
+  --format agent-feedback
+```
+
 Review a GitHub PR without posting comments:
 
 ```sh
@@ -165,7 +176,7 @@ Run `bun run cli help <command>` for full command help. README coverage tracks t
 - `generate`: `--context`, `--skills`, `--model`, `--llm-model`, `--allow-write`, `--force`, `--refresh-generated`, `--dry-run`.
 - `init`: `--fail-on-score-below`, `--report-path`, `--no-profile-write`, `--model`, `--context`, `--skills`, `--llm-model`, `--allow-write`, `--force`, `--refresh-generated`, `--dry-run`.
 - `doctor`: `--fix`, `--dry-run`.
-- `review`: `--pr`, `--base-ref`, `--head-ref`, `--pr-number`, `--output-path`, `--json`, `--dry-run`, `--model`, `--llm-model`, `--allow-model-content-transfer`, `--review-provider`, `--review-model`, `--review-post-summary`, `--review-inline-comments`, `--review-inline-cap`, `--review-apply-triage-label`, `--review-create-triage-labels`.
+- `review`: `--pr`, `--base-ref`, `--head-ref`, `--pr-number`, `--output-path`, `--format`, `--json`, `--dry-run`, `--model`, `--llm-model`, `--allow-model-content-transfer`, `--review-provider`, `--review-model`, `--review-post-summary`, `--review-inline-comments`, `--review-inline-cap`, `--review-apply-triage-label`, `--review-create-triage-labels`.
 - `triage`: `--number`, `--state`, `--limit`, `--label`, `--include-label`, `--exclude-label`, `--only`, `--min-confidence`, `--format`, `--output`, `--apply`, `--apply-labels`, `--create-missing-preset-labels`, `--create-labels`, `--post-comment`, `--close-allowed`, `--dry-run`, `--allow-non-agent-ready`, `--output-path`, `--model`, `--allow-model-content-transfer`, `--llm-model`, `--json`.
 - `pr`: `--create`, `--dry-run`.
 
@@ -202,6 +213,17 @@ issueTriage:
     preferUpstream: true
     createMissingPresetLabels: false
 ```
+
+Optional local artifact retention can remove stale operational artifacts from `.open-maintainer/triage/**`, `.open-maintainer/reviews/**`, and `.open-maintainer/runs/**` through `doctor --fix` without treating generated context artifacts as retention targets:
+
+```yaml
+retention:
+  localArtifactsMaxAgeDays: 30
+```
+
+`audit` and `doctor` surface `.open-maintainer.yml` diagnostics. Unknown optional keys warn and are ignored; invalid required safety metadata fails the command.
+
+Add `.open-maintainerignore` beside `.gitignore` to exclude repository content from analyzer scans, local review diffs, and dashboard uploads. It uses gitignore-style rules, including later `!` negation, while hard safety skips such as binary files and dependency/build directories still apply.
 
 Existing generated context is preserved by default. Use `--refresh-generated` to refresh only Open Maintainer generated files, or `--force` only when overwriting generated artifacts is intentional.
 

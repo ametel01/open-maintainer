@@ -329,4 +329,27 @@ describe("analyzeRepo", () => {
       "visible.md",
     ]);
   });
+
+  it("applies .open-maintainerignore when scanning repository files", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "open-maintainer-ignore-"));
+    await mkdir(path.join(root, "src/generated"), { recursive: true });
+    await writeFile(path.join(root, "README.md"), "# Fixture");
+    await writeFile(
+      path.join(root, ".open-maintainerignore"),
+      "src/generated/\n",
+    );
+    await writeFile(path.join(root, "src/index.ts"), "export const ok = true;");
+    await writeFile(
+      path.join(root, "src/generated/client.ts"),
+      "export const generated = true;",
+    );
+
+    const files = await scanRepository(root);
+
+    expect(files.map((file) => file.path).sort()).toEqual([
+      ".open-maintainerignore",
+      "README.md",
+      "src/index.ts",
+    ]);
+  });
 });

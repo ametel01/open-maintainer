@@ -9,12 +9,16 @@ import type {
   RepoProfile,
 } from "@open-maintainer/shared";
 import {
+  buildRepositoryIgnoreRules,
+  isRepositoryPathIgnored,
   newId,
   nowIso,
   optionalContextArtifactHints,
   recognizedContextArtifactHints,
+  repositoryIgnoreFileNames,
   requiredContextArtifactHints,
 } from "@open-maintainer/shared";
+import type { RepositoryIgnoreRule } from "@open-maintainer/shared";
 
 export type AnalyzerFile = {
   path: string;
@@ -203,6 +207,7 @@ async function scanRepositoryWithSource(
   const maxBytesPerFile =
     options.maxBytesPerFile ?? defaultScanOptions.maxBytesPerFile;
   const files: AnalyzerFile[] = [];
+  const ignoreRules = await loadRepositoryIgnoreRules(absoluteRoot);
   const gitVisibleFiles = await listGitVisibleFiles(absoluteRoot);
   let truncated = false;
 
@@ -212,7 +217,11 @@ async function scanRepositoryWithSource(
         truncated = true;
         break;
       }
-      if (shouldSkipRepoPath(relativePath) || !shouldReadFile(relativePath)) {
+      if (
+        shouldSkipRepoPath(relativePath) ||
+        isRepositoryPathIgnored(relativePath, ignoreRules) ||
+        !shouldReadFile(relativePath)
+      ) {
         continue;
       }
       const absolutePath = path.join(absoluteRoot, relativePath);
@@ -255,7 +264,10 @@ async function scanRepositoryWithSource(
       const relativePath = normalizeRepoPath(
         path.relative(absoluteRoot, absolutePath),
       );
-      if (shouldSkipRepoPath(relativePath)) {
+      if (
+        shouldSkipRepoPath(relativePath) ||
+        isRepositoryPathIgnored(relativePath, ignoreRules)
+      ) {
         continue;
       }
       if (entry.isDirectory()) {
@@ -669,6 +681,26 @@ async function listGitVisibleFiles(repoRoot: string): Promise<string[] | null> {
   }
 }
 
+async function loadRepositoryIgnoreRules(
+  repoRoot: string,
+): Promise<RepositoryIgnoreRule[]> {
+  const ignoreFiles = await Promise.all(
+    repositoryIgnoreFileNames.map(async (fileName) => {
+      const content = await readFile(
+        path.join(repoRoot, fileName),
+        "utf8",
+      ).catch(() => null);
+      return content === null ? null : { path: fileName, content };
+    }),
+  );
+  return buildRepositoryIgnoreRules(
+    ignoreFiles.filter(
+      (file): file is NonNullable<(typeof ignoreFiles)[number]> =>
+        file !== null,
+    ),
+  );
+}
+
 export function shouldSkipRepoPath(repoPath: string): boolean {
   return repoPath
     .split("/")
@@ -818,8 +850,9 @@ export function analyzeRepo(input: AnalyzeRepoInput): RepoProfile {
   const generatedFilePaths = detectGeneratedFilePaths(normalizedFiles);
   const ignoreFiles = paths.filter(
     (repoPath) =>
-      path.posix.basename(repoPath) === ".gitignore" ||
-      path.posix.basename(repoPath) === ".dockerignore",
+      repositoryIgnoreFileNames.some(
+        (fileName) => path.posix.basename(repoPath) === fileName,
+      ) || path.posix.basename(repoPath) === ".dockerignore",
   );
   const testFilePaths = detectTestFilePaths(paths);
   const riskHintPaths = detectRiskHintPaths(paths);
@@ -1419,6 +1452,7 @@ function shouldReadFile(repoPath: string): boolean {
   }
   if (
     path.posix.basename(repoPath) === ".gitignore" ||
+    path.posix.basename(repoPath) === ".open-maintainerignore" ||
     path.posix.basename(repoPath) === ".dockerignore" ||
     detectOwnershipHints([repoPath]).length > 0 ||
     environmentFilePatterns.some((pattern) =>

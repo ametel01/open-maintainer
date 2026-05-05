@@ -80,6 +80,7 @@ describe("CLI help", () => {
     expect(result.stdout).toContain("open-maintainer review <repo>");
     expect(result.stdout).toContain("--base-ref <ref>");
     expect(result.stdout).toContain("--pr <number>");
+    expect(result.stdout).toContain("--format markdown|agent-feedback");
     expect(result.stdout).toContain("--json");
     expect(result.stdout).toContain("--dry-run");
     expect(result.stdout).toContain("--model codex|claude");

@@ -3365,6 +3365,38 @@ export function renderReviewMarkdown(input: ReviewResult): string {
   return trimTrailingBlankLines(lines).join("\n");
 }
 
+export function renderReviewAgentFeedback(input: ReviewResult): string {
+  const review = parseReviewResult(input);
+  const findings = orderedFindings(review.findings);
+  const requiredActions = [
+    ...review.contributionTriage.requiredActions,
+    ...requiredValidationCommands(review).map(
+      (command) => `Run validation command: ${command}`,
+    ),
+  ];
+  const lines = [
+    `Open Maintainer agent feedback ${review.prNumber ? `#${review.prNumber}` : "local"}`,
+    "",
+    `Diff: ${review.baseRef}...${review.headRef}`,
+    `Merge readiness: ${formatReadiness(review.mergeReadiness.status)} - ${review.mergeReadiness.reason}`,
+    `Contribution triage: ${formatSnakeCase(review.contributionTriage.category ?? review.contributionTriage.status)} - ${review.contributionTriage.recommendation}`,
+    "",
+    "Finding types: BLOCKER means must fix; MAJOR means should fix before merge; MINOR means small fix; NOTE means question or observation.",
+    "",
+    "Required actions:",
+    ...(requiredActions.length > 0
+      ? requiredActions.map((action) => `- ${action}`)
+      : ["- No required author action or validation command was inferred."]),
+    "",
+    "Numbered comments:",
+    ...(findings.length > 0
+      ? findings.flatMap(renderAgentFeedbackFinding)
+      : ["No concrete findings."]),
+  ];
+
+  return trimTrailingBlankLines(lines).join("\n");
+}
+
 export function renderReviewSummaryComment(input: ReviewResult): string {
   const review = parseReviewResult(input);
   return [
@@ -3582,6 +3614,12 @@ function renderRequiredValidationBlock(review: ReviewResult): string {
   return ["```sh", ...commands, "```"].join("\n");
 }
 
+function orderedFindings(findings: ReviewFinding[]): ReviewFinding[] {
+  return severityOrder.flatMap((severity) =>
+    findings.filter((item) => item.severity === severity),
+  );
+}
+
 function requiredValidationCommands(review: ReviewResult): string[] {
   const commands = review.expectedValidation
     .map((item) => item.command)
@@ -3658,10 +3696,7 @@ function renderFindings(findings: ReviewFinding[]): string {
     return "No concrete findings.";
   }
 
-  return severityOrder
-    .flatMap((severity) =>
-      findings.filter((item) => item.severity === severity),
-    )
+  return orderedFindings(findings)
     .map((finding) => {
       const detail = parseFindingBody(finding.body);
       return [
@@ -3687,6 +3722,28 @@ function renderFindings(findings: ReviewFinding[]): string {
       ].join("\n");
     })
     .join("\n");
+}
+
+function renderAgentFeedbackFinding(
+  finding: ReviewFinding,
+  index: number,
+): string[] {
+  const detail = parseFindingBody(finding.body);
+  const location = finding.path
+    ? `${finding.path}${finding.line ? `:${finding.line}` : ""}`
+    : "not path-specific";
+  const description =
+    detail.description ||
+    (detail.category ? `Category: ${detail.category}` : finding.body);
+  return [
+    `${index + 1}. [${finding.severity.toUpperCase()}] \`${location}\` - ${finding.title}`,
+    `Issue: ${description}`,
+    `Impact: ${detail.impact || "Not specified."}`,
+    `Recommendation: ${detail.recommendation || "Not specified."}`,
+    "Evidence:",
+    renderCitationList(finding.citations),
+    "",
+  ];
 }
 
 function renderCitationBlock(citations: ReviewEvidenceCitation[]): string {

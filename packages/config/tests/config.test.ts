@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseOpenMaintainerConfig,
+  parseOpenMaintainerConfigWithDiagnostics,
   stringifyOpenMaintainerConfig,
 } from "../src";
 
@@ -54,6 +55,72 @@ repo:
 issueTriage:
   closure:
     maxClosuresPerRun: -1
+generated:
+  by: open-maintainer
+  artifactVersion: 3
+  generatedAt: "2026-04-30T00:00:00.000Z"
+`),
+    ).toThrow();
+  });
+
+  it("returns diagnostics for unknown keys while preserving valid config", () => {
+    const result = parseOpenMaintainerConfigWithDiagnostics(`
+version: 1
+repo:
+  profileVersion: 2
+  defaultBranch: main
+  extra: ignored
+rules:
+  - Run bun test.
+retention:
+  localArtifactsMaxAgeDays: 7
+  typo: ignored
+unknownTopLevel: true
+generated:
+  by: open-maintainer
+  artifactVersion: 3
+  generatedAt: "2026-04-30T00:00:00.000Z"
+`);
+
+    expect(result.config.retention?.localArtifactsMaxAgeDays).toBe(7);
+    expect(result.config.rules).toEqual(["Run bun test."]);
+    expect(result.diagnostics.map((item) => item.path)).toEqual([
+      "unknownTopLevel",
+      "repo.extra",
+      "retention.typo",
+    ]);
+  });
+
+  it("ignores invalid optional sections and hard-fails invalid required config", () => {
+    const result = parseOpenMaintainerConfigWithDiagnostics(`
+version: 1
+repo:
+  profileVersion: 2
+  defaultBranch: main
+issueTriage:
+  closure:
+    maxClosuresPerRun: -1
+retention:
+  localArtifactsMaxAgeDays: "soon"
+generated:
+  by: open-maintainer
+  artifactVersion: 3
+  generatedAt: "2026-04-30T00:00:00.000Z"
+`);
+
+    expect(result.config.issueTriage).toBeUndefined();
+    expect(result.config.retention).toBeUndefined();
+    expect(result.diagnostics.map((item) => item.path)).toEqual([
+      "issueTriage",
+      "retention",
+    ]);
+
+    expect(() =>
+      parseOpenMaintainerConfigWithDiagnostics(`
+version: 2
+repo:
+  profileVersion: 2
+  defaultBranch: main
 generated:
   by: open-maintainer
   artifactVersion: 3

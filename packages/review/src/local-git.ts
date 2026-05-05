@@ -1,11 +1,19 @@
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { promisify } from "node:util";
 import type {
+  RepositoryIgnoreRule,
   ReviewChangedFile,
   ReviewInput,
   ReviewSkippedFile,
 } from "@open-maintainer/shared";
-import { nowIso } from "@open-maintainer/shared";
+import {
+  buildRepositoryIgnoreRules,
+  isRepositoryPathIgnored,
+  nowIso,
+  repositoryIgnoreFileNames,
+} from "@open-maintainer/shared";
 
 const execFileAsync = promisify(execFile);
 
@@ -85,6 +93,7 @@ export async function assembleLocalReviewInput(
       `${options.baseRef}...${options.headRef}`,
     ]),
   ]);
+  const ignoreRules = await loadRepositoryIgnoreRules(options.repoRoot);
   const numstats = parseNumstat(numstatOutput);
   const changedFiles: ReviewChangedFile[] = [];
   const skippedFiles: ReviewSkippedFile[] = [];
@@ -92,7 +101,10 @@ export async function assembleLocalReviewInput(
 
   for (const changedPath of parseNameStatus(statusOutput)) {
     const path = changedPath.path;
-    if (shouldSkipReviewPath(path)) {
+    if (
+      shouldSkipReviewPath(path) ||
+      isRepositoryPathIgnored(path, ignoreRules)
+    ) {
       skippedFiles.push({ path, reason: "filtered" });
       continue;
     }
@@ -183,6 +195,26 @@ async function gitOutput(cwd: string, args: string[]): Promise<string> {
     maxBuffer: 8 * 1024 * 1024,
   });
   return stdout;
+}
+
+async function loadRepositoryIgnoreRules(
+  repoRoot: string,
+): Promise<RepositoryIgnoreRule[]> {
+  const ignoreFiles = await Promise.all(
+    repositoryIgnoreFileNames.map(async (fileName) => {
+      const content = await readFile(
+        path.join(repoRoot, fileName),
+        "utf8",
+      ).catch(() => null);
+      return content === null ? null : { path: fileName, content };
+    }),
+  );
+  return buildRepositoryIgnoreRules(
+    ignoreFiles.filter(
+      (file): file is NonNullable<(typeof ignoreFiles)[number]> =>
+        file !== null,
+    ),
+  );
 }
 
 function parseNameStatus(output: string): Array<{

@@ -134,6 +134,65 @@ describe("local git review context", () => {
       await rm(repoRoot, { recursive: true, force: true });
     }
   });
+
+  it("applies .open-maintainerignore after .gitignore for local review diffs", async () => {
+    const repoRoot = await mkdtemp(path.join(tmpdir(), "review-git-ignore-"));
+    try {
+      await git(repoRoot, ["init", "-b", "main"]);
+      await writeFile(path.join(repoRoot, ".gitignore"), "*.lock\n");
+      await writeFile(
+        path.join(repoRoot, ".open-maintainerignore"),
+        "generated/\n!Cargo.lock\n",
+      );
+      await writeFile(path.join(repoRoot, "Cargo.lock"), "lock = 1\n");
+      await mkdir(path.join(repoRoot, "generated"), { recursive: true });
+      await writeFile(path.join(repoRoot, "generated/output.ts"), "old\n");
+      await writeFile(path.join(repoRoot, "src.ts"), "old\n");
+      await git(repoRoot, ["add", "-f", "."]);
+      await git(repoRoot, [
+        "-c",
+        "user.email=test@example.com",
+        "-c",
+        "user.name=Open Maintainer",
+        "commit",
+        "-m",
+        "Initial",
+      ]);
+      const baseSha = (await git(repoRoot, ["rev-parse", "HEAD"])).trim();
+      await writeFile(path.join(repoRoot, "Cargo.lock"), "lock = 2\n");
+      await writeFile(path.join(repoRoot, "generated/output.ts"), "new\n");
+      await writeFile(path.join(repoRoot, "src.ts"), "new\n");
+      await git(repoRoot, ["add", "-f", "."]);
+      await git(repoRoot, [
+        "-c",
+        "user.email=test@example.com",
+        "-c",
+        "user.name=Open Maintainer",
+        "commit",
+        "-m",
+        "Change",
+      ]);
+      const headSha = (await git(repoRoot, ["rev-parse", "HEAD"])).trim();
+
+      const input = await assembleLocalReviewInput({
+        repoRoot,
+        repoId: "repo_1",
+        baseRef: baseSha,
+        headRef: headSha,
+      });
+
+      expect(input.changedFiles.map((file) => file.path).sort()).toEqual([
+        "Cargo.lock",
+        "src.ts",
+      ]);
+      expect(input.skippedFiles).toContainEqual({
+        path: "generated/output.ts",
+        reason: "filtered",
+      });
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 async function git(cwd: string, args: string[]): Promise<string> {

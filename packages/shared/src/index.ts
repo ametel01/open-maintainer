@@ -355,6 +355,139 @@ export const GeneratedArtifactSchema = z.object({
 });
 export type GeneratedArtifact = z.infer<typeof GeneratedArtifactSchema>;
 
+export type RepositoryIgnoreRule = {
+  pattern: string;
+  negated: boolean;
+  directoryOnly: boolean;
+  anchored: boolean;
+};
+
+export type RepositoryIgnoreFile = {
+  path: string;
+  content: string;
+};
+
+export type RepositoryIgnoreDecision = {
+  ignored: boolean;
+  matched: boolean;
+};
+
+export const repositoryIgnoreFileNames = [
+  ".gitignore",
+  ".open-maintainerignore",
+] as const;
+
+export function parseRepositoryIgnoreFile(
+  content: string,
+): RepositoryIgnoreRule[] {
+  return content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("#"))
+    .map((line) => {
+      const negated = line.startsWith("!");
+      const rawPattern = negated ? line.slice(1) : line;
+      const anchored = rawPattern.startsWith("/");
+      const directoryOnly = rawPattern.endsWith("/");
+      const pattern = normalizeRepositoryPath(rawPattern)
+        .replace(/^\/+/, "")
+        .replace(/\/+$/, "");
+      return { pattern, negated, directoryOnly, anchored };
+    })
+    .filter((rule) => rule.pattern.length > 0);
+}
+
+export function buildRepositoryIgnoreRules(
+  files: readonly RepositoryIgnoreFile[],
+): RepositoryIgnoreRule[] {
+  return files.flatMap((file) => parseRepositoryIgnoreFile(file.content));
+}
+
+export function getRepositoryIgnoreDecision(
+  repoPath: string,
+  rules: readonly RepositoryIgnoreRule[],
+): RepositoryIgnoreDecision {
+  const normalizedPath = normalizeRepositoryPath(repoPath).replace(/^\/+/, "");
+  if (!normalizedPath) {
+    return { ignored: false, matched: false };
+  }
+  let ignored = false;
+  let matched = false;
+  for (const rule of rules) {
+    if (repositoryIgnoreRuleMatches(normalizedPath, rule)) {
+      ignored = !rule.negated;
+      matched = true;
+    }
+  }
+  return { ignored, matched };
+}
+
+export function isRepositoryPathIgnored(
+  repoPath: string,
+  rules: readonly RepositoryIgnoreRule[],
+): boolean {
+  return getRepositoryIgnoreDecision(repoPath, rules).ignored;
+}
+
+function repositoryIgnoreRuleMatches(
+  repoPath: string,
+  rule: RepositoryIgnoreRule,
+): boolean {
+  const pattern = rule.pattern;
+  if (!pattern.includes("/")) {
+    return repoPath.split("/").some((part) => globMatch(pattern, part));
+  }
+
+  const candidates = rule.anchored
+    ? [repoPath]
+    : repoPath
+        .split("/")
+        .map((_, index, parts) => parts.slice(index).join("/"));
+  return candidates.some((candidate) =>
+    rule.directoryOnly
+      ? globMatch(pattern, candidate) || globMatch(`${pattern}/**`, candidate)
+      : globMatch(pattern, candidate),
+  );
+}
+
+function globMatch(pattern: string, value: string): boolean {
+  const regex = new RegExp(`^${globPatternToRegex(pattern)}$`);
+  return regex.test(value);
+}
+
+function globPatternToRegex(pattern: string): string {
+  let output = "";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index] ?? "";
+    const next = pattern[index + 1];
+    const afterNext = pattern[index + 2];
+    if (character === "*" && next === "*" && afterNext === "/") {
+      output += "(?:.*/)?";
+      index += 2;
+      continue;
+    }
+    if (character === "*" && next === "*") {
+      output += ".*";
+      index += 1;
+      continue;
+    }
+    if (character === "*") {
+      output += "[^/]*";
+      continue;
+    }
+    if (character === "?") {
+      output += "[^/]";
+      continue;
+    }
+    output += character.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  return output;
+}
+
+function normalizeRepositoryPath(repoPath: string): string {
+  return repoPath.replaceAll("\\", "/");
+}
+
 export const repositoryUploadLimits = {
   maxFiles: 800,
   maxFileBytes: 128_000,
@@ -402,6 +535,7 @@ export const repositoryUploadReadableExtensions = [
 export const repositoryUploadReadableNames = [
   ".env.example",
   ".gitignore",
+  ".open-maintainerignore",
   "bun.lock",
   "bun.lockb",
   "Cargo.lock",

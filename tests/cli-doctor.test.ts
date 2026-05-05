@@ -1,5 +1,13 @@
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -152,6 +160,67 @@ describe("CLI doctor", () => {
     );
     expect(fixed.stdout).toContain("obsolete generated artifact");
     await expect(readFile(obsoletePath, "utf8")).rejects.toThrow();
+  });
+
+  it("removes expired local operational artifacts with --fix", async () => {
+    const workdir = await mkdtemp(
+      path.join(tmpdir(), "open-maintainer-doctor-retention-"),
+    );
+    await cp(fixtureRoot, workdir, { recursive: true });
+    const fakeCodex = await createFakeCodexCli();
+
+    const generate = await runCli(
+      [
+        "generate",
+        workdir,
+        ...codexGenerateArgs,
+        "--context",
+        "codex",
+        "--skills",
+        "codex",
+      ],
+      fakeCodex.env,
+    );
+    expect(generate.exitCode).toBe(0);
+
+    const oldRunPath = path.join(
+      workdir,
+      ".open-maintainer/triage/runs/old.json",
+    );
+    const oldGeneratedReportPath = path.join(
+      workdir,
+      ".open-maintainer/report.md",
+    );
+    await mkdir(path.dirname(oldRunPath), { recursive: true });
+    await writeFile(oldRunPath, '{"status":"old"}\n');
+    const oldTime = new Date(Date.now() - 31 * 86_400_000);
+    await utimes(oldRunPath, oldTime, oldTime);
+    await utimes(oldGeneratedReportPath, oldTime, oldTime);
+
+    const doctor = await runCli(["doctor", workdir]);
+
+    expect(doctor.exitCode).toBe(1);
+    expect(doctor.stderr).toBe("");
+    expect(doctor.stdout).toContain(
+      "retention: .open-maintainer/triage/runs/old.json is",
+    );
+    expect(doctor.stdout).toContain(
+      "exceeding local artifact retention of 30 days",
+    );
+    expect(doctor.stdout).toContain(`fix: bun run cli doctor ${workdir} --fix`);
+
+    const fixed = await runCli(["doctor", workdir, "--fix"]);
+
+    expect(fixed.exitCode).toBe(0);
+    expect(fixed.stderr).toBe("");
+    expect(fixed.stdout).toContain(
+      "remove: .open-maintainer/triage/runs/old.json",
+    );
+    expect(fixed.stdout).toContain("expired local operational artifact");
+    await expect(readFile(oldRunPath, "utf8")).rejects.toThrow();
+    await expect(readFile(oldGeneratedReportPath, "utf8")).resolves.toContain(
+      "Open Maintainer",
+    );
   });
 
   it("previews doctor fixes without removing generated artifacts", async () => {

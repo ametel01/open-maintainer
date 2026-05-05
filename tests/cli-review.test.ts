@@ -210,6 +210,45 @@ describe("CLI review", () => {
     expect(markdown).toContain("src/index.ts");
   });
 
+  it("prints compact agent feedback with deterministic numbered comments", async () => {
+    const fixture = await createReviewRepo();
+    const fakeCodex = await createFakeCodexCli();
+
+    const result = await runCli(
+      [
+        "review",
+        fixture,
+        "--base-ref",
+        "HEAD~1",
+        "--head-ref",
+        "HEAD",
+        "--pr-number",
+        "44",
+        "--format",
+        "agent-feedback",
+        "--model",
+        "codex",
+        "--allow-model-content-transfer",
+      ],
+      {
+        ...fakeCodex.env,
+        OPEN_MAINTAINER_FAKE_CODEX_FINDING: "1",
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("Open Maintainer agent feedback #44");
+    expect(result.stdout).toContain("Finding types: BLOCKER means must fix");
+    expect(result.stdout).toContain(
+      "1. [MAJOR] `src/index.ts:2` - Return value change needs a fix",
+    );
+    expect(result.stdout).toContain(
+      "Recommendation: Add or adjust tests and confirm the changed value is intended.",
+    );
+    expect(result.stdout).not.toContain("### Walkthrough");
+  });
+
   it("previews review output files without writing them in dry-run mode", async () => {
     const fixture = await createReviewRepo();
     const outputPath = ".open-maintainer/review.md";
@@ -273,6 +312,87 @@ describe("CLI review", () => {
     ]);
     expect(review.contributionTriage.category).toBe("ready_for_review");
     expect(review.modelProvider).toBe("Codex CLI");
+  });
+
+  it("applies .open-maintainerignore before CLI review model input", async () => {
+    const directory = await mkdtemp(
+      path.join(tmpdir(), "om-cli-review-ignore-"),
+    );
+    await execFileAsync("git", ["init", "-b", "main"], { cwd: directory });
+    await execFileAsync("git", ["config", "user.email", "test@example.com"], {
+      cwd: directory,
+    });
+    await execFileAsync("git", ["config", "user.name", "Test User"], {
+      cwd: directory,
+    });
+    await mkdir(path.join(directory, "src"), { recursive: true });
+    await writeFile(
+      path.join(directory, "package.json"),
+      JSON.stringify(
+        {
+          name: "cli-review-ignore-fixture",
+          type: "module",
+          scripts: { test: "vitest run" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFile(
+      path.join(directory, ".open-maintainerignore"),
+      "src/ignored.ts\n",
+    );
+    await writeFile(
+      path.join(directory, "src", "index.ts"),
+      "export const kept = 1;\n",
+    );
+    await writeFile(
+      path.join(directory, "src", "ignored.ts"),
+      "export const ignored = 1;\n",
+    );
+    await execFileAsync("git", ["add", "."], { cwd: directory });
+    await execFileAsync("git", ["commit", "-m", "initial"], {
+      cwd: directory,
+    });
+    await writeFile(
+      path.join(directory, "src", "index.ts"),
+      "export const kept = 2;\n",
+    );
+    await writeFile(
+      path.join(directory, "src", "ignored.ts"),
+      "export const ignored = 2;\n",
+    );
+    await execFileAsync("git", ["add", "."], { cwd: directory });
+    await execFileAsync("git", ["commit", "-m", "change"], {
+      cwd: directory,
+    });
+    const fakeCodex = await createFakeCodexCli();
+
+    const result = await runCli(
+      [
+        "review",
+        directory,
+        "--base-ref",
+        "HEAD~1",
+        "--head-ref",
+        "HEAD",
+        "--json",
+        "--model",
+        "codex",
+        "--allow-model-content-transfer",
+      ],
+      fakeCodex.env,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const review = ReviewResultSchema.parse(JSON.parse(result.stdout));
+    expect(review.changedFiles.map((file) => file.path)).toEqual([
+      "src/index.ts",
+    ]);
+    expect(review.changedFiles.map((file) => file.path)).not.toContain(
+      "src/ignored.ts",
+    );
   });
 
   it("prints actionable errors for missing refs", async () => {

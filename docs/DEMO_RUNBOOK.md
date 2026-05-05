@@ -263,7 +263,8 @@ all required artifacts are present
 ```
 
 When using `--fix`, add `--dry-run` first to preview removable obsolete
-generated artifacts and profile refreshes without changing the checkout:
+generated artifacts, stale local operational artifacts, and profile refreshes
+without changing the checkout:
 
 ```sh
 bun run cli doctor "$TARGET_REPO" --fix --dry-run
@@ -773,6 +774,20 @@ Expected review sections include:
 ## Merge Readiness
 ## Residual Risk
 ```
+
+Print compact numbered feedback for an agent loop:
+
+```sh
+bun run cli review "$REVIEW_REPO" \
+  --base-ref HEAD~1 \
+  --head-ref HEAD \
+  --model codex \
+  --allow-model-content-transfer \
+  --format agent-feedback
+```
+
+Expected compact output starts with `Open Maintainer agent feedback`, includes
+finding type definitions, and renders findings as stable numbered comments.
 
 Contribution triage appears inside the review output and uses categorical,
 evidence-based outcomes such as `ready_for_review`, `needs_author_input`,

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseReviewResult,
   renderInlineReviewComment,
+  renderReviewAgentFeedback,
   renderReviewMarkdown,
   renderReviewSummaryComment,
 } from "../src";
@@ -181,6 +182,28 @@ describe("review renderers", () => {
       "- Add validation evidence to the PR description.",
     );
     expect(rendered).toContain("user_input");
+  });
+
+  it("renders compact numbered agent feedback", () => {
+    const rendered = renderReviewAgentFeedback(reviewedWithContributionTriage);
+
+    expect(rendered).toContain("Open Maintainer agent feedback #12");
+    expect(rendered).toContain(
+      "Finding types: BLOCKER means must fix; MAJOR means should fix before merge",
+    );
+    expect(rendered).toContain(
+      "- Add validation evidence to the PR description.",
+    );
+    expect(rendered).toContain(
+      "- Run validation command: bun test tests/cli-help.test.ts",
+    );
+    expect(rendered).toContain(
+      "1. [BLOCKER] `apps/cli/src/index.ts:42` - Missing consent guard",
+    );
+    expect(rendered).toContain(
+      "2. [MAJOR] `tests/cli-help.test.ts` - Missing focused test",
+    );
+    expect(rendered).not.toContain("### Walkthrough");
   });
 
   it("renders a marked summary comment without GitHub APIs", () => {

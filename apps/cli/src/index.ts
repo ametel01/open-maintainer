@@ -10,6 +10,11 @@ import {
   buildCodexCliProvider,
 } from "@open-maintainer/ai";
 import {
+  type OpenMaintainerConfig,
+  type OpenMaintainerConfigDiagnostic,
+  parseOpenMaintainerConfigWithDiagnostics,
+} from "@open-maintainer/config";
+import {
   type ArtifactModel,
   type ContextGenerationStage,
   compareProfileDrift,
@@ -28,6 +33,7 @@ import {
   type ContextPrPublisher,
   createContextPrWorkflow,
 } from "@open-maintainer/github";
+import { renderReviewAgentFeedback } from "@open-maintainer/review";
 import type {
   PullRequestReviewRun,
   ReviewInlineCommentResult,
@@ -51,6 +57,11 @@ import {
   createCliIssueTriageAdapters,
   createIssueTriageUseCases,
 } from "./issue-triage-use-cases";
+import {
+  defaultLocalArtifactRetentionDays,
+  findExpiredLocalArtifacts,
+  removeLocalArtifacts,
+} from "./local-artifacts";
 import {
   type CliRepositoryReference,
   type PersistedRepositoryArtifacts,
@@ -101,6 +112,7 @@ type CliOptions = {
   triageOnlySignals: string[];
   triageMinConfidence: number | null;
   triageFormat: "table" | "json" | "markdown" | null;
+  reviewFormat: "markdown" | "agent-feedback" | null;
   issueApplyLabels: boolean;
   issueCreateLabels: boolean;
   issuePostComment: boolean;
@@ -214,13 +226,14 @@ Examples:
 Check that required generated context artifacts are present and that the stored profile is not stale.
 
 Options:
-  --fix                                Remove obsolete generated context artifacts
+  --fix                                Remove obsolete context artifacts and expired local operational artifacts
   --dry-run                            With --fix, print planned fixes without writing files
 
 Outputs:
   Agent readiness score
   Missing required artifacts, if any
   Profile drift, if detected
+  Config diagnostics and expired local operational artifacts, if detected
 
 Examples:
   open-maintainer doctor .
@@ -240,6 +253,7 @@ Diff options:
 
 Output options:
   --output-path <path>                  Write markdown review output to a file
+  --format markdown|agent-feedback      Choose rich markdown or compact numbered agent feedback
   --json                                Print the machine-readable ReviewResult JSON
   --dry-run                             Preview writes; with --pr, review without posting to GitHub
 
@@ -260,6 +274,7 @@ Posting options:
 Examples:
   open-maintainer review . --base-ref main --head-ref HEAD
   open-maintainer review . --base-ref origin/main --head-ref HEAD --output-path .open-maintainer/review.md
+  open-maintainer review . --base-ref main --head-ref HEAD --format agent-feedback
   open-maintainer review . --base-ref main --head-ref HEAD --json
   open-maintainer review . --base-ref main --head-ref HEAD --model codex --allow-model-content-transfer
   open-maintainer review . --pr 123 --model codex --allow-model-content-transfer
@@ -505,14 +520,16 @@ function styleStatusLine(line: string): string {
     line.includes("failed") ||
     line.startsWith("missing:") ||
     line.startsWith("drift:") ||
-    line.startsWith("obsolete:")
+    line.startsWith("obsolete:") ||
+    line.startsWith("retention:")
   ) {
     return color(line, ansi.red);
   }
   if (
     line.includes("Dry run:") ||
     line.includes("(planned)") ||
-    line.startsWith("Mode:")
+    line.startsWith("Mode:") ||
+    line.startsWith("config warning:")
   ) {
     return color(line, ansi.yellow);
   }
@@ -531,6 +548,7 @@ function renderAuditSummary(input: {
   profile: RepoProfile;
   reportPath: string;
   options: CliOptions;
+  configDiagnostics: string[];
 }): string[] {
   const profilePath = ".open-maintainer/profile.json";
   const reportPath = path.relative(input.repoRoot, input.reportPath);
@@ -548,6 +566,9 @@ function renderAuditSummary(input: {
       `Report: ${reportPath}${input.options.dryRun ? " (planned)" : ""}`,
       ...(input.options.dryRun ? ["Dry run: no audit files written."] : []),
     ]),
+    ...(input.configDiagnostics.length > 0
+      ? ["", ...renderBox("Config diagnostics", input.configDiagnostics)]
+      : []),
     ...formatReadinessSuggestions(input.profile),
   ];
 }
@@ -640,7 +661,13 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         async run(repoRoot) {
           const { profile, reportPath } = await audit(repoRoot, options);
           printLines(
-            renderAuditSummary({ repoRoot, profile, reportPath, options }),
+            renderAuditSummary({
+              repoRoot,
+              profile,
+              reportPath,
+              options,
+              configDiagnostics: await configDiagnosticMessages(repoRoot),
+            }),
           );
           return thresholdExit(profile.agentReadiness.score, options);
         },
@@ -712,6 +739,20 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
               result.fixablePaths,
               options,
             );
+          }
+          if (result.retentionFixablePaths.length > 0) {
+            fixActions.push(
+              ...result.retentionFixablePaths.map((item) => ({
+                action: "remove",
+                target: item,
+                reason: "expired local operational artifact",
+              })),
+            );
+            await removeLocalArtifacts({
+              repoRoot,
+              paths: result.retentionFixablePaths,
+              dryRun: options.dryRun,
+            });
           }
           if (result.profileNeedsRefresh) {
             await audit(repoRoot, {
@@ -840,6 +881,9 @@ function assertTriageOptionsBeforeRepository(
   subcommand: "issue" | "issues" | "brief",
   options: CliOptions,
 ): void {
+  if (options.reviewFormat === "agent-feedback") {
+    throw new Error("--format agent-feedback is only supported by review.");
+  }
   if (subcommand === "brief") {
     return;
   }
@@ -862,6 +906,7 @@ async function audit(
   repoRoot: string,
   options: CliOptions,
 ): Promise<{ profile: RepoProfile; reportPath: string }> {
+  await loadOpenMaintainerConfigState(repoRoot);
   const profile = await repositoryWorkspace.profile(repoRoot);
   const openMaintainerDir = path.join(repoRoot, ".open-maintainer");
   const storedProfile = await readFile(
@@ -1005,8 +1050,13 @@ async function doctor(
   ok: boolean;
   messages: string[];
   fixablePaths: string[];
+  retentionFixablePaths: string[];
   profileNeedsRefresh: boolean;
 }> {
+  const configState = await loadOpenMaintainerConfigState(repoRoot);
+  const retentionDays =
+    configState.config?.retention?.localArtifactsMaxAgeDays ??
+    defaultLocalArtifactRetentionDays;
   const files = await repositoryWorkspace.scan(repoRoot);
   const profile = await repositoryWorkspace.profile({ repoRoot, files });
   const filesByPath = new Map(files.map((file) => [file.path, file]));
@@ -1055,11 +1105,20 @@ async function doctor(
     expectedPaths: requiredPaths,
     storedContextHashes,
   });
+  const expiredArtifacts = await findExpiredLocalArtifacts({
+    repoRoot,
+    maxAgeDays: retentionDays,
+  });
   const fixablePaths = obsolete;
+  const retentionFixablePaths = expiredArtifacts.map(
+    (artifact) => artifact.path,
+  );
   const profileNeedsRefresh =
     stale.includes(".open-maintainer/profile.json") || driftFindings.length > 0;
   const fixCommand =
-    fixablePaths.length > 0 || profileNeedsRefresh
+    fixablePaths.length > 0 ||
+    retentionFixablePaths.length > 0 ||
+    profileNeedsRefresh
       ? formatDoctorFixCommand({
           repoPath: repoDisplayPath,
         })
@@ -1069,9 +1128,13 @@ async function doctor(
       missing.length === 0 &&
       stale.length === 0 &&
       obsolete.length === 0 &&
-      driftFindings.length === 0,
+      driftFindings.length === 0 &&
+      expiredArtifacts.length === 0,
     messages: [
       `Agent Readiness: ${profile.agentReadiness.score}/100`,
+      ...configState.diagnostics.map(
+        (diagnostic) => `config warning: ${diagnostic.message}`,
+      ),
       ...(missing.length > 0
         ? missing.map((item) => `missing: ${item}`)
         : ["all required artifacts are present"]),
@@ -1084,9 +1147,14 @@ async function doctor(
         (item) =>
           `obsolete: ${item} is a generated context artifact no longer tracked by .open-maintainer/profile.json`,
       ),
+      ...expiredArtifacts.map(
+        (artifact) =>
+          `retention: ${artifact.path} is ${artifact.ageDays} days old, exceeding local artifact retention of ${retentionDays} days`,
+      ),
       ...(fixCommand ? [`fix: ${fixCommand}`] : []),
     ],
     fixablePaths,
+    retentionFixablePaths,
     profileNeedsRefresh,
   };
 }
@@ -1879,6 +1947,10 @@ async function review(repoRoot: string, options: CliOptions): Promise<void> {
   const provider = resolveRequiredReviewProvider(options);
   const reviewModel = resolveReviewModel(options);
   const operation = createReviewOperationRuntime();
+  const operationMarkdownPath =
+    options.outputPath && options.reviewFormat !== "agent-feedback"
+      ? options.outputPath
+      : null;
   const request: ReviewOperationRequest = {
     repoRoot,
     target:
@@ -1907,11 +1979,23 @@ async function review(repoRoot: string, options: CliOptions): Promise<void> {
         }
       : {}),
     output: {
-      ...(options.outputPath ? { markdownPath: options.outputPath } : {}),
+      ...(operationMarkdownPath ? { markdownPath: operationMarkdownPath } : {}),
       json: options.json,
     },
   };
   const run = await operation.review(request);
+  const renderedReview =
+    options.reviewFormat === "agent-feedback"
+      ? renderReviewAgentFeedback(run.review)
+      : run.markdown;
+  const agentFeedbackOutputPath =
+    options.outputPath && options.reviewFormat === "agent-feedback"
+      ? path.resolve(repoRoot, options.outputPath)
+      : null;
+  if (agentFeedbackOutputPath && !options.dryRun) {
+    await mkdir(path.dirname(agentFeedbackOutputPath), { recursive: true });
+    await writeFile(agentFeedbackOutputPath, renderedReview, "utf8");
+  }
   if (!options.json && (options.outputPath || options.pr !== null)) {
     printLines(
       commandHeader({
@@ -1924,13 +2008,14 @@ async function review(repoRoot: string, options: CliOptions): Promise<void> {
   if (options.outputPath) {
     const outputPath = path.resolve(
       repoRoot,
-      run.output?.markdownPath ?? options.outputPath,
+      run.output?.markdownPath ?? agentFeedbackOutputPath ?? options.outputPath,
     );
     if (!options.json) {
       printLines(
         renderBox("Review output", [
-          `Review: ${path.relative(repoRoot, outputPath)}${run.output?.written === false ? " (planned)" : ""}`,
-          ...(run.output?.written === false
+          `Review: ${path.relative(repoRoot, outputPath)}${run.output?.written === false || (agentFeedbackOutputPath && options.dryRun) ? " (planned)" : ""}`,
+          ...(run.output?.written === false ||
+          (agentFeedbackOutputPath && options.dryRun)
             ? ["Dry run: no review file written."]
             : []),
         ]),
@@ -1943,7 +2028,7 @@ async function review(repoRoot: string, options: CliOptions): Promise<void> {
   }
   if (options.pr === null) {
     if (!options.outputPath) {
-      console.log(run.markdown);
+      console.log(renderedReview);
     }
     return;
   }
@@ -1956,6 +2041,11 @@ async function review(repoRoot: string, options: CliOptions): Promise<void> {
 }
 
 function assertReviewOptions(options: CliOptions): void {
+  if (options.triageFormat && options.triageFormat !== "markdown") {
+    throw new Error(
+      "Invalid value for --format with review. Expected markdown or agent-feedback.",
+    );
+  }
   if (
     (options.reviewPostSummary ||
       options.reviewInlineComments ||
@@ -2098,6 +2188,26 @@ async function readOptionalRepoFile(
   return readFile(path.join(repoRoot, repoPath), "utf8").catch(() => undefined);
 }
 
+type CliConfigState = {
+  config: OpenMaintainerConfig | null;
+  diagnostics: OpenMaintainerConfigDiagnostic[];
+};
+
+async function loadOpenMaintainerConfigState(
+  repoRoot: string,
+): Promise<CliConfigState> {
+  const source = await readOptionalRepoFile(repoRoot, ".open-maintainer.yml");
+  if (!source) {
+    return { config: null, diagnostics: [] };
+  }
+  return parseOpenMaintainerConfigWithDiagnostics(source);
+}
+
+async function configDiagnosticMessages(repoRoot: string): Promise<string[]> {
+  const state = await loadOpenMaintainerConfigState(repoRoot);
+  return state.diagnostics.map((diagnostic) => diagnostic.message);
+}
+
 function parseOptions(rawOptions: string[]): CliOptions {
   const options: CliOptions = {
     force: false,
@@ -2136,6 +2246,7 @@ function parseOptions(rawOptions: string[]): CliOptions {
     triageOnlySignals: [],
     triageMinConfidence: null,
     triageFormat: null,
+    reviewFormat: null,
     issueApplyLabels: false,
     issueCreateLabels: false,
     issuePostComment: false,
@@ -2286,12 +2397,24 @@ function parseOptions(rawOptions: string[]): CliOptions {
       index += 1;
     } else if (option === "--format") {
       const value = requireOptionValue(rawOptions, index, option);
-      if (value !== "table" && value !== "json" && value !== "markdown") {
+      if (
+        value !== "table" &&
+        value !== "json" &&
+        value !== "markdown" &&
+        value !== "agent-feedback"
+      ) {
         throw new Error(
-          "Invalid value for --format. Expected table, json, or markdown.",
+          "Invalid value for --format. Expected table, json, markdown, or agent-feedback.",
         );
       }
-      options.triageFormat = value;
+      if (value === "agent-feedback") {
+        options.reviewFormat = value;
+      } else {
+        options.triageFormat = value;
+        if (value === "markdown") {
+          options.reviewFormat = value;
+        }
+      }
       index += 1;
     } else if (option === "--output") {
       options.outputPath = requireOptionValue(rawOptions, index, option);
