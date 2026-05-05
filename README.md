@@ -62,10 +62,11 @@ Report: ../../../../tmp/open-maintainer-report.md
 all required artifacts are present
 ```
 
-To audit another repository, pass its path:
+To audit another repository, pass its path or GitHub URL:
 
 ```sh
 bun run cli audit /path/to/repo
+bun run cli audit https://github.com/OWNER/REPO
 ```
 
 ## Usage
@@ -74,6 +75,12 @@ Analyze a repository and write `.open-maintainer/profile.json` plus `.open-maint
 
 ```sh
 bun run cli audit /path/to/repo
+```
+
+For GitHub URL inputs, Open Maintainer creates a temporary checkout, runs the same CLI logic, copies relative artifacts under `.open-maintainer/url-repos/OWNER/REPO`, and removes the checkout:
+
+```sh
+bun run cli audit https://github.com/OWNER/REPO
 ```
 
 Generate Codex context and skills after explicitly allowing model-backed writes:
@@ -116,20 +123,31 @@ bun run cli review /path/to/repo \
 Review a GitHub PR without posting comments:
 
 ```sh
-bun run cli review /path/to/repo \
+bun run cli review https://github.com/OWNER/REPO \
   --pr 123 \
   --model codex \
   --allow-model-content-transfer \
   --dry-run
 ```
 
-Triage one issue locally:
+Triage one issue from a GitHub URL:
 
 ```sh
-bun run cli triage issue /path/to/repo \
+bun run cli triage issue https://github.com/OWNER/REPO \
   --number 82 \
   --model codex \
-  --allow-model-content-transfer
+  --allow-model-content-transfer \
+  --dry-run
+```
+
+Triage a bounded issue batch from a GitHub URL:
+
+```sh
+bun run cli triage issues https://github.com/OWNER/REPO \
+  --limit 5 \
+  --model codex \
+  --allow-model-content-transfer \
+  --dry-run
 ```
 
 Print command help:
