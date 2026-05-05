@@ -20,8 +20,8 @@ import {
 import {
   assembleLocalReviewInput,
   createCliReviewOperationModelRequest,
-  createReviewOperation,
   createReviewOperationDeps,
+  createReviewPipeline,
   loadReviewPromptContext,
   reviewOperationOutputFromShortcut,
   reviewOperationPublicationFromShortcut,
@@ -37,6 +37,7 @@ import type {
   ReviewPublicationInput,
   ReviewPublicationPlan,
   ReviewPublicationResult,
+  ReviewPullRequestMetadata,
   ReviewSummaryCommentResult,
   ReviewTriageLabelPlan,
   ReviewTriageLabelResult,
@@ -124,16 +125,13 @@ export type ReviewSourcePort = {
       maxTotalBytes: number;
     }>;
   }): Promise<ReviewInput>;
-  fetchPullRequest(input: {
+  fetchPullRequestMetadata(input: {
     repoRoot: string;
     profile: RepoProfile;
     prNumber: number;
-    limits?: Partial<{
-      maxFiles: number;
-      maxFileBytes: number;
-      maxTotalBytes: number;
-    }>;
-  }): Promise<ReviewInput>;
+    baseRef?: string;
+    headRef?: string;
+  }): Promise<ReviewPullRequestMetadata>;
 };
 
 export type ReviewPromptContextPort = {
@@ -175,7 +173,7 @@ export function createReviewOperationRuntime(
     async review(input) {
       const resolvedPorts =
         ports ?? createProductionReviewOperationPorts(input.repoRoot);
-      const operation = createReviewOperation(
+      const pipeline = createReviewPipeline(
         createCliReviewOperationDeps(resolvedPorts),
       );
       const output = reviewOperationOutputFromShortcut(
@@ -186,26 +184,24 @@ export function createReviewOperationRuntime(
       const publication = reviewOperationPublicationFromShortcut(
         input.publication,
       );
-      const result = await operation.run({
-        source: {
-          kind: "local",
-          repoRoot: input.repoRoot,
-          target:
-            input.target.kind === "pullRequest"
-              ? { kind: "pullRequest", number: input.target.number }
-              : {
-                  kind: "diff",
-                  ...(input.target.baseRef
-                    ? { baseRef: input.target.baseRef }
-                    : {}),
-                  ...(input.target.headRef
-                    ? { headRef: input.target.headRef }
-                    : {}),
-                  ...(input.target.prNumber !== undefined
-                    ? { prNumber: input.target.prNumber }
-                    : {}),
-                },
-        },
+      const target =
+        input.target.kind === "pullRequest"
+          ? { kind: "pullRequest" as const, number: input.target.number }
+          : {
+              kind: "diff" as const,
+              ...(input.target.baseRef
+                ? { baseRef: input.target.baseRef }
+                : {}),
+              ...(input.target.headRef
+                ? { headRef: input.target.headRef }
+                : {}),
+              ...(input.target.prNumber !== undefined
+                ? { prNumber: input.target.prNumber }
+                : {}),
+            };
+      const result = await pipeline.review({
+        source: { kind: "local", repoRoot: input.repoRoot },
+        target,
         model: createCliReviewOperationModelRequest({
           provider: input.model.provider,
           consent: input.model.consent,
@@ -214,8 +210,14 @@ export function createReviewOperationRuntime(
             : {}),
         }),
         mode: input.intent,
-        ...(publication !== undefined ? { publish: publication } : {}),
-        ...(output ? { output } : {}),
+        ...(publication !== undefined || output
+          ? {
+              effects: {
+                ...(publication !== undefined ? { publication } : {}),
+                ...(output ? { output } : {}),
+              },
+            }
+          : {}),
       });
       if (!result.ok) {
         throw result.error;
@@ -255,11 +257,8 @@ export function createProductionReviewOperationPorts(
           ...(input.limits ? input.limits : {}),
         });
       },
-      async fetchPullRequest(input) {
-        return fetchCliPullRequestReviewInput(input.repoRoot, input.prNumber, {
-          repoId: input.profile.repoId,
-          ...(input.limits ? { limits: input.limits } : {}),
-        });
+      async fetchPullRequestMetadata(input) {
+        return preparePullRequestReview(input.repoRoot, input.prNumber);
       },
     },
     promptContext: {
@@ -304,8 +303,8 @@ function createCliReviewOperationDeps(
       assembleDiff(input) {
         return ports.source.assembleDiff(input);
       },
-      fetchPullRequest(input) {
-        return ports.source.fetchPullRequest(input);
+      fetchPullRequestMetadata(input) {
+        return ports.source.fetchPullRequestMetadata(input);
       },
     },
     promptContext: {
@@ -396,51 +395,6 @@ type GhRepositoryView = {
   name?: string | null;
   owner?: { login?: string | null } | null;
 };
-
-async function fetchCliPullRequestReviewInput(
-  repoRoot: string,
-  prNumber: number,
-  options: {
-    repoId: string;
-    limits?: Partial<{
-      maxFiles: number;
-      maxFileBytes: number;
-      maxTotalBytes: number;
-    }>;
-  },
-) {
-  const pullRequest = await preparePullRequestReview(repoRoot, prNumber);
-  const input = await assembleLocalReviewInput({
-    repoRoot,
-    repoId: options.repoId,
-    baseRef: pullRequest.baseRef,
-    headRef: pullRequest.headRef,
-    ...(options.limits ? options.limits : {}),
-  }).catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `Unable to assemble review diff for ${pullRequest.baseRef}...${pullRequest.headRef}. Verify --pr ${prNumber}. ${message}`,
-    );
-  });
-  return {
-    ...input,
-    prNumber: pullRequest.number,
-    owner: pullRequest.owner,
-    repo: pullRequest.repo,
-    title: pullRequest.title,
-    body: pullRequest.body,
-    url: pullRequest.url,
-    author: pullRequest.author,
-    isDraft: pullRequest.isDraft,
-    mergeable: pullRequest.mergeable,
-    mergeStateStatus: pullRequest.mergeStateStatus,
-    reviewDecision: pullRequest.reviewDecision,
-    baseSha: pullRequest.baseSha,
-    headSha: pullRequest.headSha,
-    checkStatuses: pullRequest.checkStatuses,
-    existingComments: pullRequest.existingComments,
-  };
-}
 
 async function preparePullRequestReview(
   repoRoot: string,

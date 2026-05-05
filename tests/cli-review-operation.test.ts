@@ -172,9 +172,9 @@ describe("CLI review operation runtime", () => {
     let publishCalled = false;
     const operation = createReviewOperationRuntime(
       createPorts({
-        async fetchPullRequest(input) {
+        async fetchPullRequestMetadata(input) {
           fetchPrNumber = input.prNumber;
-          return reviewInput();
+          return reviewPullRequestMetadata({ number: input.prNumber });
         },
         publisher: {
           async plan(input) {
@@ -328,8 +328,11 @@ describe("CLI review operation runtime", () => {
     let publishCalled = false;
     const operation = createReviewOperationRuntime(
       createPorts({
-        async fetchPullRequest() {
-          return reviewInput({ isDraft: true });
+        async fetchPullRequestMetadata(input) {
+          return reviewPullRequestMetadata({
+            number: input.prNumber,
+            isDraft: true,
+          });
         },
         publisher: {
           async plan() {
@@ -365,7 +368,7 @@ describe("CLI review operation runtime", () => {
 function createPorts(
   overrides: {
     assembleDiff?: ReviewOperationPorts["source"]["assembleDiff"];
-    fetchPullRequest?: ReviewOperationPorts["source"]["fetchPullRequest"];
+    fetchPullRequestMetadata?: ReviewOperationPorts["source"]["fetchPullRequestMetadata"];
     publisher?: ReviewOperationPorts["publisher"];
     output?: ReviewOperationPorts["output"];
   } = {},
@@ -386,11 +389,11 @@ function createPorts(
         }
         return reviewInput({ prNumber: null });
       },
-      async fetchPullRequest(input) {
-        if (overrides.fetchPullRequest) {
-          return overrides.fetchPullRequest(input);
+      async fetchPullRequestMetadata(input) {
+        if (overrides.fetchPullRequestMetadata) {
+          return overrides.fetchPullRequestMetadata(input);
         }
-        return reviewInput({ prNumber: input.prNumber });
+        return reviewPullRequestMetadata({ number: input.prNumber });
       },
     },
     promptContext: {
@@ -466,6 +469,40 @@ function repoProfile(): RepoProfile {
       generatedAt: "2026-05-04T00:00:00.000Z",
     },
     createdAt: "2026-05-04T00:00:00.000Z",
+  };
+}
+
+function reviewPullRequestMetadata(
+  overrides: {
+    number?: number;
+    isDraft?: boolean | null;
+  } = {},
+) {
+  return {
+    number: overrides.number ?? 7,
+    owner: "acme",
+    repo: "tool",
+    title: "Change value",
+    body: "Validation: bun test",
+    url: "https://github.com/acme/tool/pull/7",
+    author: "author",
+    isDraft: overrides.isDraft ?? false,
+    mergeable: "MERGEABLE",
+    mergeStateStatus: "CLEAN",
+    reviewDecision: "REVIEW_REQUIRED",
+    baseRef: "main",
+    headRef: "feature",
+    baseSha: "base-sha",
+    headSha: "head-sha",
+    checkStatuses: [
+      {
+        name: "Tests",
+        status: "COMPLETED",
+        conclusion: "SUCCESS",
+        url: "https://example.test/check",
+      },
+    ],
+    existingComments: [],
   };
 }
 
