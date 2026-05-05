@@ -13,6 +13,7 @@ import {
   createReviewOperation,
   createReviewOperationDeps,
   createReviewOrchestrator,
+  createReviewPipeline,
   createReviewWorkflow,
 } from "../src";
 
@@ -603,6 +604,174 @@ describe("review orchestrator", () => {
 describe("review operation boundary", () => {
   beforeEach(() => {
     observedPrompts.length = 0;
+  });
+
+  it("prepares an evidence-backed case without invoking model providers", async () => {
+    let modelCalled = false;
+    const pipeline = createReviewPipeline(
+      createReviewOperationDeps(
+        createWorkflowDeps({
+          local: {
+            async assembleDiff(input) {
+              return reviewInput({
+                prNumber: null,
+                baseRef: input.baseRef,
+                headRef: input.headRef,
+              });
+            },
+          },
+          modelProviders: {
+            resolve() {
+              modelCalled = true;
+              return { providerConfig, provider };
+            },
+          },
+        }),
+      ),
+    );
+
+    const prepared = await pipeline.prepareCase({
+      source: { kind: "local", repoRoot: "/repo" },
+      target: { kind: "diff", baseRef: "main", headRef: "HEAD" },
+      model: {
+        kind: "cli",
+        provider: "codex",
+        consent: operationConsent("cli-flag"),
+      },
+      mode: "preview",
+    });
+
+    expect(modelCalled).toBe(false);
+    expect(prepared.source.input.prNumber).toBeNull();
+    expect(prepared.target).toBeNull();
+    expect(prepared.promptContext.paths).toEqual(["AGENTS.md"]);
+    expect(prepared.precheck.walkthrough).toEqual([
+      "modified src/index.ts (+1/-1)",
+    ]);
+    expect(prepared.evidence).toEqual(
+      expect.objectContaining({
+        version: 1,
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            id: "patch:1",
+            kind: "patch",
+            path: "src/index.ts",
+          }),
+          expect.objectContaining({
+            id: "context:agents-md",
+            kind: "agents_md",
+          }),
+        ]),
+      }),
+    );
+    expect(prepared.provenance).toEqual(
+      expect.objectContaining({
+        sourceKind: "local",
+        adapter: "local-diff",
+      }),
+    );
+    expect(prepared.diagnostics).toEqual({
+      changedFileCount: 1,
+      skippedFiles: [{ path: "dist/bundle.js", reason: "filtered" }],
+      promptContextPaths: ["AGENTS.md"],
+      warnings: [],
+      sourceFallbacks: [],
+    });
+  });
+
+  it("normalizes local pull request metadata into prepared cases", async () => {
+    const assembleCalls: Array<{ baseRef: string; headRef: string }> = [];
+    const pipeline = createReviewPipeline(
+      createReviewOperationDeps({
+        local: {
+          async prepareProfile() {
+            return repoProfile();
+          },
+          async detectDefaultBranch() {
+            return "main";
+          },
+          async assembleDiff(input) {
+            assembleCalls.push({
+              baseRef: input.baseRef,
+              headRef: input.headRef,
+            });
+            return reviewInput({
+              prNumber: null,
+              owner: "local",
+              repo: "local",
+              isDraft: null,
+              baseRef: input.baseRef,
+              headRef: input.headRef,
+            });
+          },
+          async fetchPullRequestMetadata(input) {
+            return {
+              number: input.prNumber,
+              owner: "acme",
+              repo: "tool",
+              title: "Metadata PR",
+              body: "Validation: bun test",
+              url: "https://github.com/acme/tool/pull/7",
+              author: "maintainer",
+              isDraft: true,
+              mergeable: "MERGEABLE",
+              mergeStateStatus: "CLEAN",
+              reviewDecision: "REVIEW_REQUIRED",
+              baseRef: "origin/main",
+              headRef: "refs/remotes/open-maintainer/pr-7",
+              baseSha: "metadata-base",
+              headSha: "metadata-head",
+              checkStatuses: [],
+              existingComments: [],
+            };
+          },
+        },
+        modelProviders: {
+          resolve() {
+            return { providerConfig, provider };
+          },
+        },
+      }),
+    );
+
+    const prepared = await pipeline.prepareCase({
+      source: { kind: "local", repoRoot: "/repo" },
+      target: { kind: "pullRequest", number: 7 },
+      model: {
+        kind: "cli",
+        provider: "codex",
+        consent: operationConsent("cli-flag"),
+      },
+      mode: "preview",
+    });
+
+    expect(assembleCalls).toEqual([
+      {
+        baseRef: "origin/main",
+        headRef: "refs/remotes/open-maintainer/pr-7",
+      },
+    ]);
+    expect(prepared.source.input).toEqual(
+      expect.objectContaining({
+        owner: "acme",
+        repo: "tool",
+        prNumber: 7,
+        title: "Metadata PR",
+        isDraft: true,
+        baseSha: "metadata-base",
+        headSha: "metadata-head",
+      }),
+    );
+    expect(prepared.target).toEqual(
+      expect.objectContaining({
+        owner: "acme",
+        repo: "tool",
+        pullNumber: 7,
+        baseSha: "metadata-base",
+        headSha: "metadata-head",
+      }),
+    );
+    expect(prepared.provenance.adapter).toBe("local-pull-request-metadata");
   });
 
   it("rejects missing repository-content consent before source preparation", async () => {

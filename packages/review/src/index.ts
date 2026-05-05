@@ -1,9 +1,12 @@
 import type { ModelProvider } from "@open-maintainer/ai";
 import type {
   ModelProviderConfig,
+  Repo,
   RepoProfile,
+  ReviewCheckStatus,
   ReviewContributionTriageCategory,
   ReviewEvidenceCitation,
+  ReviewExistingComment,
   ReviewFinding,
   ReviewInput,
   ReviewResult,
@@ -13,11 +16,13 @@ import type {
   RunRecord,
 } from "@open-maintainer/shared";
 import { ReviewResultSchema, nowIso } from "@open-maintainer/shared";
-import { generateModelBackedReview } from "./model";
+import { assembleLocalReviewInput } from "./local-git";
+import { buildReviewEvidenceItems, generateModelBackedReview } from "./model";
 import type { ReviewPromptContext as ModelReviewPromptContext } from "./model";
 export { assembleLocalReviewInput } from "./local-git";
 export type { LocalReviewInputOptions } from "./local-git";
 export {
+  buildReviewEvidenceItems,
   buildReviewPrompt,
   modelReviewOutputJsonSchema,
   parseModelReviewOutput,
@@ -25,6 +30,7 @@ export {
 export type {
   ModelBackedReviewOptions,
   ModelReviewOutput,
+  ReviewEvidenceItem,
   ReviewPromptContext,
 } from "./model";
 export { loadReviewPromptContext } from "./prompt-context";
@@ -332,6 +338,39 @@ export type ReviewPreparedSource = {
   profile: RepoProfile;
   input: ReviewInput;
   repoRoot: string | null;
+  adapter?: string;
+  warnings?: string[];
+  sourceFallbacks?: string[];
+};
+
+export type PreparedReviewCase = {
+  source: {
+    profile: RepoProfile;
+    input: ReviewInput;
+    repoRoot: string | null;
+  };
+  target: PullRequestReviewTarget | null;
+  promptContext: {
+    context: ModelReviewPromptContext;
+    paths: string[];
+  };
+  precheck: ReviewEvidencePrecheck;
+  evidence: {
+    version: 1;
+    items: ReturnType<typeof buildReviewEvidenceItems>;
+  };
+  provenance: {
+    sourceKind: ReviewPipelineRequest["source"]["kind"];
+    collectedAt: string;
+    adapter: string;
+  };
+  diagnostics: {
+    changedFileCount: number;
+    skippedFiles: ReviewSkippedFile[];
+    promptContextPaths: string[];
+    warnings: string[];
+    sourceFallbacks: string[];
+  };
 };
 
 export type ReviewRun = {
@@ -445,6 +484,26 @@ export type LocalPullRequestInput = {
   limits?: Partial<ReviewContentLimits>;
 };
 
+export type ReviewPullRequestMetadata = {
+  number: number;
+  owner?: string;
+  repo?: string;
+  title?: string | null;
+  body?: string;
+  url?: string | null;
+  author?: string | null;
+  isDraft?: boolean | null;
+  mergeable?: string | null;
+  mergeStateStatus?: string | null;
+  reviewDecision?: string | null;
+  baseRef: string;
+  headRef?: string;
+  baseSha?: string | null;
+  headSha?: string | null;
+  checkStatuses?: ReviewCheckStatus[];
+  existingComments?: ReviewExistingComment[];
+};
+
 export type NormalizedReviewTarget = ReviewTargetRequest;
 
 export type LocalReviewEnvironment = {
@@ -452,6 +511,13 @@ export type LocalReviewEnvironment = {
   detectDefaultBranch(input: { repoRoot: string }): Promise<string | null>;
   assembleDiff(input: LocalDiffInput): Promise<ReviewInput>;
   fetchPullRequest?(input: LocalPullRequestInput): Promise<ReviewInput>;
+  fetchPullRequestMetadata?(input: {
+    repoRoot: string;
+    profile: RepoProfile;
+    prNumber: number;
+    baseRef?: string;
+    headRef?: string;
+  }): Promise<ReviewPullRequestMetadata>;
 };
 
 export type StoredReviewEnvironment = {
@@ -460,6 +526,59 @@ export type StoredReviewEnvironment = {
     target?: NormalizedReviewTarget;
     limits: ReviewContentLimits;
   }): Promise<ReviewPreparedSource>;
+};
+
+export type ReviewRepositorySourceWorkspace = {
+  repo: Repo;
+  profile: RepoProfile;
+  worktreeRoot: string | null;
+};
+
+export type ReviewRepositorySourcePreparationResult =
+  | {
+      ok: true;
+      value: ReviewRepositorySourceWorkspace;
+    }
+  | {
+      ok: false;
+      error: {
+        statusCode: 404 | 409 | 422;
+        message: string;
+      };
+    };
+
+export type ReviewRepositorySourceLifecyclePort = {
+  prepare(input: {
+    repoId: string;
+    intent: {
+      kind: "review-preview";
+      baseRef?: string;
+      headRef?: string;
+      prNumber?: number;
+    };
+  }): Promise<ReviewRepositorySourcePreparationResult>;
+};
+
+export type StoredReviewSourceAdapterInput = {
+  repo: Repo;
+  repositorySources: ReviewRepositorySourceLifecyclePort;
+  pullRequestContext?: {
+    fetch(input: {
+      repoId: string;
+      repo: Repo;
+      prNumber: number;
+    }): Promise<ReviewInput | null>;
+  };
+  localPullRequestMetadata?: {
+    fetch(input: {
+      worktreeRoot: string;
+      repo: Repo;
+      prNumber: number;
+    }): Promise<ReviewPullRequestMetadata>;
+  };
+  localDiff?: {
+    assemble(input: LocalDiffInput): Promise<ReviewInput>;
+  };
 };
 
 export type ReviewModelResolver = {
@@ -518,8 +637,6 @@ export type RepositoryContentConsent = {
   grantedBy: "cli-flag" | "dashboard-provider" | "github-action-input";
 };
 
-export type ReviewOperationTarget = ReviewTargetRequest;
-
 export type ReviewOperationModelRequest =
   | {
       kind: "cli";
@@ -538,6 +655,44 @@ export type ReviewOperationModelRequest =
       provider: ModelProvider;
       consent: RepositoryContentConsent;
     };
+
+export type ReviewPipelineSource =
+  | { kind: "local"; repoRoot: string }
+  | { kind: "stored"; repoId: string }
+  | {
+      kind: "prepared";
+      profile: RepoProfile;
+      input: ReviewInput;
+      repoRoot?: string | null;
+    };
+
+export type ReviewPipelineEffects = {
+  output?: ReviewOutputIntent;
+  publication?: false | ReviewOperationPublicationRequest;
+  persistence?: ReviewPersistenceIntent;
+};
+
+export type ReviewPipelineRequest = {
+  source: ReviewPipelineSource;
+  target?: ReviewTargetRequest;
+  model: ReviewOperationModelRequest;
+  mode: "preview" | "apply";
+  effects?: ReviewPipelineEffects;
+  limits?: Partial<ReviewContentLimits>;
+};
+
+export type ReviewCasePreparationRequest = ReviewPipelineRequest;
+
+export type ReviewPipelineResult = ReviewOperationResult;
+
+export type ReviewPipeline = {
+  review(request: ReviewPipelineRequest): Promise<ReviewPipelineResult>;
+  prepareCase(
+    request: ReviewCasePreparationRequest,
+  ): Promise<PreparedReviewCase>;
+};
+
+export type ReviewOperationTarget = ReviewTargetRequest;
 
 export type ReviewOperationPublicationRequest = {
   mode: "plan" | "publish";
@@ -878,27 +1033,146 @@ export function createReviewWorkflow(deps: ReviewWorkflowDeps): ReviewWorkflow {
   };
 }
 
-export function createReviewOperation(
+export function createReviewPipeline(
   deps: ReviewOperationDeps,
-): ReviewOperation {
-  const orchestrator = createReviewOrchestrator(
-    withReviewOperationPhases(deps),
-  );
+): ReviewPipeline {
+  const phasedDeps = withReviewOperationPhases(deps);
 
-  const run = async (
-    request: ReviewOperationRequest,
-  ): Promise<ReviewOperationResult> => {
+  const prepareCase = async (
+    request: ReviewCasePreparationRequest,
+  ): Promise<PreparedReviewCase> => {
+    assertOperationRepositoryContentConsent(request.model);
+    const source = await preparePipelineReviewSource(
+      phasedDeps.sources,
+      request,
+    );
+    return buildPreparedReviewCase(phasedDeps, request, source);
+  };
+
+  const review = async (
+    request: ReviewPipelineRequest,
+  ): Promise<ReviewPipelineResult> => {
+    let source: ReviewPreparedSource | null = null;
+    let activeRun: RunRecord | null = null;
     try {
       assertOperationRepositoryContentConsent(request.model);
-      return {
-        ok: true,
-        run: await runReviewOperationRequest(orchestrator, request),
-      };
+      source = await preparePipelineReviewSource(phasedDeps.sources, request);
+      const persistence = request.effects?.persistence;
+      if (shouldPersistRun(persistence)) {
+        if (!phasedDeps.persistence) {
+          throw new Error(
+            "Review run persistence requires a persistence port.",
+          );
+        }
+        activeRun = await phasedDeps.persistence.startRun({
+          request: reviewRequestFromPipelineRequest(request),
+          source,
+        });
+      }
+      try {
+        const preparedCase = await buildPreparedReviewCase(
+          phasedDeps,
+          request,
+          source,
+        );
+        const providerReview = await phasedDeps.modelProviders.resolve({
+          model: modelRequestForOperation(request.model),
+          repoRoot: source.repoRoot,
+          profile: source.profile,
+          reviewInput: source.input,
+        });
+        const review = await generateReview({
+          profile: source.profile,
+          input: source.input,
+          rules: source.profile.reviewRuleCandidates,
+          providerConfig: providerReview.providerConfig,
+          provider: providerReview.provider,
+          ...(Object.keys(preparedCase.promptContext.context).length > 0
+            ? { promptContext: preparedCase.promptContext.context }
+            : {}),
+        });
+        const markdown = renderReviewMarkdown(review);
+        const publicationIntent = reviewPublicationIntentForPipeline(
+          request.effects?.publication,
+        );
+        const output = await runReviewOutput({
+          intent: request.effects?.output,
+          reviewIntent: request.mode,
+          publicationIntent,
+          deps: phasedDeps,
+          repoRoot: source.repoRoot,
+          markdown,
+        });
+        const publication = await runReviewPublication({
+          intent: publicationIntent,
+          deps: phasedDeps,
+          review,
+          markdown,
+          target: publicationIntent ? preparedCase.target : null,
+          reviewInput: source.input,
+        });
+        let reviewStored = false;
+        if (shouldPersistReview(persistence)) {
+          if (!phasedDeps.persistence) {
+            throw new Error("Review storage requires a persistence port.");
+          }
+          await phasedDeps.persistence.storeReview({ review });
+          reviewStored = true;
+        }
+        if (activeRun && phasedDeps.persistence) {
+          activeRun = await phasedDeps.persistence.succeedRun({
+            run: activeRun,
+            review,
+            source,
+          });
+        }
+        return {
+          ok: true,
+          run: {
+            review,
+            markdown,
+            source: preparedCase.source,
+            output,
+            publication,
+            persistence: { run: activeRun, reviewStored },
+            diagnostics: {
+              promptContextPaths: preparedCase.diagnostics.promptContextPaths,
+              skippedFiles: preparedCase.diagnostics.skippedFiles,
+              changedFileCount: preparedCase.diagnostics.changedFileCount,
+            },
+          },
+        };
+      } catch (error) {
+        if (activeRun && phasedDeps.persistence && source) {
+          const failedRun = await phasedDeps.persistence.failRun({
+            run: activeRun,
+            error,
+            source,
+          });
+          throw new ReviewOrchestratorError(errorMessage(error), failedRun, {
+            cause: error,
+          });
+        }
+        throw error;
+      }
     } catch (error) {
       const mapped = deps.errors ? deps.errors.map(error) : error;
       return reviewOperationFailure(mapped);
     }
   };
+
+  return { review, prepareCase };
+}
+
+export function createReviewOperation(
+  deps: ReviewOperationDeps,
+): ReviewOperation {
+  const pipeline = createReviewPipeline(deps);
+
+  const run = (
+    request: ReviewOperationRequest,
+  ): Promise<ReviewOperationResult> =>
+    pipeline.review(reviewPipelineRequestFromOperation(request));
 
   return {
     run,
@@ -946,6 +1220,175 @@ export function createReviewOperation(
       });
     },
   };
+}
+
+async function preparePipelineReviewSource(
+  sources: ReviewSourcePort,
+  request: ReviewPipelineRequest,
+): Promise<ReviewPreparedSource> {
+  const source = await prepareReviewSource(
+    sources,
+    reviewRequestFromPipelineRequest(request),
+  );
+  assertNonEmptyReviewSource(source);
+  return source;
+}
+
+async function buildPreparedReviewCase(
+  deps: Pick<ReviewOperationDeps, "promptContext">,
+  request: ReviewPipelineRequest,
+  source: ReviewPreparedSource,
+): Promise<PreparedReviewCase> {
+  const promptContext = deps.promptContext
+    ? await deps.promptContext.load({
+        repoRoot: source.repoRoot,
+        profile: source.profile,
+        reviewInput: source.input,
+      })
+    : { context: {}, paths: [] };
+  const precheck = buildReviewEvidencePrecheck({
+    profile: source.profile,
+    input: source.input,
+    rules: source.profile.reviewRuleCandidates,
+  });
+  return {
+    source: {
+      profile: source.profile,
+      input: source.input,
+      repoRoot: source.repoRoot,
+    },
+    target: reviewTargetFromCaseInput(source.input),
+    promptContext,
+    precheck,
+    evidence: {
+      version: 1,
+      items: buildReviewEvidenceItems({
+        profile: source.profile,
+        input: source.input,
+        rules: source.profile.reviewRuleCandidates,
+        precheck,
+        ...(Object.keys(promptContext.context).length > 0
+          ? { promptContext: promptContext.context }
+          : {}),
+      }),
+    },
+    provenance: {
+      sourceKind: request.source.kind,
+      collectedAt: nowIso(),
+      adapter: source.adapter ?? request.source.kind,
+    },
+    diagnostics: {
+      changedFileCount: source.input.changedFiles.length,
+      skippedFiles: source.input.skippedFiles,
+      promptContextPaths: promptContext.paths,
+      warnings: source.warnings ?? [],
+      sourceFallbacks: source.sourceFallbacks ?? [],
+    },
+  };
+}
+
+function reviewTargetFromCaseInput(
+  input: ReviewInput,
+): PullRequestReviewTarget | null {
+  return input.prNumber ? reviewTargetFromInput(input) : null;
+}
+
+function reviewPipelineRequestFromOperation(
+  request: ReviewOperationRequest,
+): ReviewPipelineRequest {
+  const effects: ReviewPipelineEffects = {};
+  if (request.output) {
+    effects.output = request.output;
+  }
+  if (request.publish !== undefined) {
+    effects.publication = request.publish;
+  }
+  if (request.persist !== undefined) {
+    effects.persistence = request.persist;
+  }
+  const source = reviewPipelineSourceFromOperation(request.source);
+  const target =
+    request.source.kind === "prepared" ? undefined : request.source.target;
+  return {
+    source,
+    ...(target ? { target } : {}),
+    model: request.model,
+    mode: request.mode,
+    ...(Object.keys(effects).length > 0 ? { effects } : {}),
+    ...(request.limits ? { limits: request.limits } : {}),
+  };
+}
+
+function reviewPipelineSourceFromOperation(
+  source: ReviewOperationRequest["source"],
+): ReviewPipelineSource {
+  if (source.kind === "prepared") {
+    return {
+      kind: "prepared",
+      profile: source.profile,
+      input: source.input,
+      ...(source.repoRoot ? { repoRoot: source.repoRoot } : {}),
+    };
+  }
+  if (source.kind === "stored") {
+    return { kind: "stored", repoId: source.repoId };
+  }
+  return { kind: "local", repoRoot: source.repoRoot };
+}
+
+function reviewRequestFromPipelineRequest(
+  request: ReviewPipelineRequest,
+): ReviewRequest {
+  const reviewRequest: ReviewRequest = {
+    repository: reviewRepositoryRequestFromPipelineSource(request.source),
+    model: modelRequestForOperation(request.model),
+    intent: request.mode,
+  };
+  if (request.target) {
+    reviewRequest.target = request.target;
+  }
+  if (request.effects?.output) {
+    reviewRequest.output = request.effects.output;
+  }
+  if (request.effects?.publication !== undefined) {
+    reviewRequest.publication =
+      request.effects.publication === false
+        ? false
+        : reviewPublicationIntentForOperation(request.effects.publication);
+  }
+  if (request.effects?.persistence !== undefined) {
+    reviewRequest.persistence = request.effects.persistence;
+  }
+  if (request.limits) {
+    reviewRequest.limits = request.limits;
+  }
+  return reviewRequest;
+}
+
+function reviewRepositoryRequestFromPipelineSource(
+  source: ReviewPipelineSource,
+): ReviewRepositoryRequest {
+  if (source.kind === "prepared") {
+    return {
+      kind: "prepared",
+      profile: source.profile,
+      input: source.input,
+      ...(source.repoRoot ? { repoRoot: source.repoRoot } : {}),
+    };
+  }
+  if (source.kind === "stored") {
+    return { kind: "stored", repoId: source.repoId };
+  }
+  return { kind: "local", repoRoot: source.repoRoot };
+}
+
+function reviewPublicationIntentForPipeline(
+  publication: false | ReviewOperationPublicationRequest | undefined,
+): ReviewRequest["publication"] {
+  if (publication === undefined || publication === false) {
+    return publication;
+  }
+  return reviewPublicationIntentForOperation(publication);
 }
 
 export function createReviewOperationDeps(
@@ -1007,6 +1450,188 @@ export function createReviewOperationDeps(
     ...(deps.output ? { output: deps.output } : {}),
     ...(deps.persistence ? { persistence: deps.persistence } : {}),
     ...(deps.errors ? { errors: deps.errors } : {}),
+  };
+}
+
+export function createStoredReviewSourceEnvironment(
+  input: StoredReviewSourceAdapterInput,
+): StoredReviewEnvironment {
+  return {
+    prepareReview(request) {
+      return prepareStoredReviewSource(input, request);
+    },
+  };
+}
+
+async function prepareStoredReviewSource(
+  adapter: StoredReviewSourceAdapterInput,
+  request: {
+    repoId: string;
+    target?: NormalizedReviewTarget;
+    limits: ReviewContentLimits;
+  },
+): Promise<ReviewPreparedSource> {
+  const prNumber =
+    request.target?.kind === "pullRequest" ? request.target.number : undefined;
+  if (prNumber && adapter.pullRequestContext) {
+    const githubReviewInput = await adapter.pullRequestContext.fetch({
+      repoId: request.repoId,
+      repo: adapter.repo,
+      prNumber,
+    });
+    if (githubReviewInput) {
+      if (githubReviewInput.changedFiles.length === 0) {
+        throw new ReviewWorkflowSourceError(
+          422,
+          `No changed files were detected for PR #${prNumber}. Check the pull request before creating a review preview.`,
+        );
+      }
+      const workspace = await prepareStoredReviewWorkspace(adapter, {
+        repoId: request.repoId,
+        intent: {
+          kind: "review-preview",
+          baseRef: githubReviewInput.baseRef,
+          prNumber,
+        },
+      });
+      return {
+        profile: workspace.profile,
+        input: githubReviewInput,
+        repoRoot: workspace.worktreeRoot,
+        adapter: "github-app-pull-request",
+      };
+    }
+  }
+
+  const workspace = await prepareStoredReviewWorkspace(adapter, {
+    repoId: request.repoId,
+    intent: storedReviewWorkspaceIntent(request.target),
+  });
+  const worktreeRoot = workspace.worktreeRoot;
+  if (!worktreeRoot) {
+    throw new ReviewWorkflowSourceError(
+      409,
+      prNumber
+        ? "PR number review requires GitHub App credentials or a registered local repository worktree with gh available."
+        : "Review preview requires a registered local repository worktree in this release.",
+    );
+  }
+
+  const sourceFallbacks: string[] = [];
+  let metadata: ReviewPullRequestMetadata | null = null;
+  let metadataError: string | null = null;
+  if (prNumber && adapter.localPullRequestMetadata) {
+    try {
+      metadata = await adapter.localPullRequestMetadata.fetch({
+        worktreeRoot,
+        repo: adapter.repo,
+        prNumber,
+      });
+      if (adapter.pullRequestContext) {
+        sourceFallbacks.push("github-app-pr-context-unavailable");
+      }
+    } catch (error) {
+      metadataError =
+        error instanceof Error ? error.message : "Unable to resolve PR refs.";
+    }
+  }
+  if (prNumber && !request.target?.baseRef && !metadata) {
+    throw new ReviewWorkflowSourceError(
+      422,
+      `Unable to resolve the base ref for PR #${prNumber}. Enter a base ref manually or authenticate gh in the API environment. ${metadataError ?? ""}`.trim(),
+    );
+  }
+
+  const baseRef = request.target?.baseRef ?? metadata?.baseRef;
+  const headRef = request.target?.headRef ?? metadata?.headRef ?? "HEAD";
+  const effectiveBaseRef = baseRef ?? adapter.repo.defaultBranch;
+  const localInput = adapter.localDiff
+    ? await adapter.localDiff.assemble({
+        repoRoot: worktreeRoot,
+        profile: workspace.profile,
+        baseRef: effectiveBaseRef,
+        headRef,
+        limits: request.limits,
+      })
+    : await assembleLocalReviewInput({
+        repoRoot: worktreeRoot,
+        repoId: request.repoId,
+        baseRef: effectiveBaseRef,
+        headRef,
+        ...request.limits,
+      });
+  if (localInput.changedFiles.length === 0) {
+    throw new ReviewWorkflowSourceError(
+      422,
+      `No changed files were detected for ${effectiveBaseRef}...${headRef}. Check the base/head refs before creating a review preview.`,
+    );
+  }
+
+  return {
+    profile: workspace.profile,
+    input: {
+      ...localInput,
+      owner: adapter.repo.owner,
+      repo: adapter.repo.name,
+      prNumber: prNumber ?? null,
+      title: metadata?.title ?? localInput.title,
+      body: metadata?.body ?? localInput.body,
+      url: metadata?.url ?? localInput.url,
+      author: metadata?.author ?? localInput.author,
+      isDraft: metadata?.isDraft ?? localInput.isDraft,
+      mergeable: metadata?.mergeable ?? localInput.mergeable,
+      mergeStateStatus:
+        metadata?.mergeStateStatus ?? localInput.mergeStateStatus,
+      reviewDecision: metadata?.reviewDecision ?? localInput.reviewDecision,
+      baseSha: metadata?.baseSha ?? localInput.baseSha,
+      headSha: metadata?.headSha ?? localInput.headSha,
+      checkStatuses: metadata?.checkStatuses ?? localInput.checkStatuses,
+      existingComments:
+        metadata?.existingComments ?? localInput.existingComments,
+    },
+    repoRoot: worktreeRoot,
+    adapter: metadata
+      ? "stored-local-pull-request-metadata"
+      : "stored-local-diff",
+    sourceFallbacks,
+  };
+}
+
+async function prepareStoredReviewWorkspace(
+  adapter: StoredReviewSourceAdapterInput,
+  input: {
+    repoId: string;
+    intent: Parameters<
+      ReviewRepositorySourceLifecyclePort["prepare"]
+    >[0]["intent"];
+  },
+): Promise<ReviewRepositorySourceWorkspace> {
+  const workspace = await adapter.repositorySources.prepare(input);
+  if (!workspace.ok) {
+    throw new ReviewWorkflowSourceError(
+      workspace.error.statusCode === 404 ? 409 : workspace.error.statusCode,
+      workspace.error.message,
+    );
+  }
+  return workspace.value;
+}
+
+function storedReviewWorkspaceIntent(
+  target: NormalizedReviewTarget | undefined,
+): Parameters<ReviewRepositorySourceLifecyclePort["prepare"]>[0]["intent"] {
+  if (target?.kind === "pullRequest") {
+    return {
+      kind: "review-preview",
+      ...(target.baseRef ? { baseRef: target.baseRef } : {}),
+      ...(target.headRef ? { headRef: target.headRef } : {}),
+      prNumber: target.number,
+    };
+  }
+  return {
+    kind: "review-preview",
+    ...(target?.baseRef ? { baseRef: target.baseRef } : {}),
+    ...(target?.headRef ? { headRef: target.headRef } : {}),
+    ...(target?.prNumber ? { prNumber: target.prNumber } : {}),
   };
 }
 
@@ -1408,21 +2033,35 @@ async function prepareLocalWorkflowSource(
 ): Promise<ReviewPreparedSource> {
   const profile = await local.prepareProfile({ repoRoot: input.repoRoot });
   if (input.target?.kind === "pullRequest") {
-    if (!local.fetchPullRequest) {
+    if (local.fetchPullRequest) {
+      const reviewInput = await local.fetchPullRequest({
+        repoRoot: input.repoRoot,
+        profile,
+        prNumber: input.target.number,
+        ...(input.target.baseRef ? { baseRef: input.target.baseRef } : {}),
+        ...(input.target.headRef ? { headRef: input.target.headRef } : {}),
+        ...(input.limits ? { limits: input.limits } : {}),
+      });
+      return {
+        profile,
+        input: reviewInput,
+        repoRoot: input.repoRoot,
+        adapter: "local-pull-request",
+      };
+    }
+    if (!local.fetchPullRequestMetadata) {
       throw new ReviewWorkflowSourceError(
         422,
         "Pull request review requires a pull request source port.",
       );
     }
-    const reviewInput = await local.fetchPullRequest({
+    return prepareLocalPullRequestWorkflowSource({
+      local,
       repoRoot: input.repoRoot,
       profile,
-      prNumber: input.target.number,
-      ...(input.target.baseRef ? { baseRef: input.target.baseRef } : {}),
-      ...(input.target.headRef ? { headRef: input.target.headRef } : {}),
+      target: input.target,
       ...(input.limits ? { limits: input.limits } : {}),
     });
-    return { profile, input: reviewInput, repoRoot: input.repoRoot };
   }
   const baseRef =
     input.target?.kind === "diff" && input.target.baseRef
@@ -1465,6 +2104,71 @@ async function prepareLocalWorkflowSource(
       reviewDecision: null,
     },
     repoRoot: input.repoRoot,
+    adapter: "local-diff",
+  };
+}
+
+async function prepareLocalPullRequestWorkflowSource(input: {
+  local: LocalReviewEnvironment;
+  repoRoot: string;
+  profile: RepoProfile;
+  target: Extract<ReviewTargetRequest, { kind: "pullRequest" }>;
+  limits?: Partial<ReviewContentLimits>;
+}): Promise<ReviewPreparedSource> {
+  if (!input.local.fetchPullRequestMetadata) {
+    throw new ReviewWorkflowSourceError(
+      422,
+      "Pull request review requires a pull request metadata port.",
+    );
+  }
+  const metadata = await input.local.fetchPullRequestMetadata({
+    repoRoot: input.repoRoot,
+    profile: input.profile,
+    prNumber: input.target.number,
+    ...(input.target.baseRef ? { baseRef: input.target.baseRef } : {}),
+    ...(input.target.headRef ? { headRef: input.target.headRef } : {}),
+  });
+  const baseRef = input.target.baseRef ?? metadata.baseRef;
+  const headRef = input.target.headRef ?? metadata.headRef ?? "HEAD";
+  const localInput = await input.local
+    .assembleDiff({
+      repoRoot: input.repoRoot,
+      profile: input.profile,
+      baseRef,
+      headRef,
+      ...(input.limits ? { limits: input.limits } : {}),
+    })
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new ReviewWorkflowSourceError(
+        422,
+        `Unable to assemble review diff for ${baseRef}...${headRef}. Verify PR #${input.target.number}. ${message}`,
+      );
+    });
+  return {
+    profile: input.profile,
+    input: {
+      ...localInput,
+      prNumber: metadata.number,
+      owner: metadata.owner ?? input.profile.owner,
+      repo: metadata.repo ?? input.profile.name,
+      title: metadata.title ?? localInput.title,
+      body: metadata.body ?? localInput.body,
+      url: metadata.url ?? localInput.url,
+      author: metadata.author ?? localInput.author,
+      isDraft: metadata.isDraft ?? localInput.isDraft,
+      mergeable: metadata.mergeable ?? localInput.mergeable,
+      mergeStateStatus:
+        metadata.mergeStateStatus ?? localInput.mergeStateStatus,
+      reviewDecision: metadata.reviewDecision ?? localInput.reviewDecision,
+      baseSha: metadata.baseSha ?? localInput.baseSha,
+      headSha: metadata.headSha ?? localInput.headSha,
+      checkStatuses: metadata.checkStatuses ?? localInput.checkStatuses,
+      existingComments:
+        metadata.existingComments ?? localInput.existingComments,
+    },
+    repoRoot: input.repoRoot,
+    adapter: "local-pull-request-metadata",
   };
 }
 

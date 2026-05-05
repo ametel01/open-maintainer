@@ -328,11 +328,11 @@ export type ModelBackedReviewOptions = {
   promptContext?: ReviewPromptContext;
 };
 
-type PromptEvidenceKind = z.infer<typeof ModelEvidenceKindSchema>;
+export type ReviewEvidenceKind = z.infer<typeof ModelEvidenceKindSchema>;
 
-type PromptEvidenceItem = {
+export type ReviewEvidenceItem = {
   id: string;
-  kind: PromptEvidenceKind;
+  kind: ReviewEvidenceKind;
   summary: string;
   path?: string;
   name?: string;
@@ -348,7 +348,7 @@ export async function generateModelBackedReview(
     outputSchema: modelReviewOutputJsonSchema,
   });
   const parsed = parseModelReviewOutput(completion.text);
-  const evidenceItems = buildEvidenceItems(options);
+  const evidenceItems = buildReviewEvidenceItems(options);
   const validation = validateModelFindings({
     input: options.input,
     profile: options.profile,
@@ -443,7 +443,7 @@ export function buildReviewPrompt(input: {
     residualRisk: input.precheck.residualRisk,
     contributionTriageEvidence: input.precheck.contributionTriageEvidence,
   };
-  const evidenceItems = buildEvidenceItems(input);
+  const evidenceItems = buildReviewEvidenceItems(input);
 
   return {
     system: [
@@ -722,7 +722,7 @@ export function parseModelReviewOutput(text: string): ModelReviewOutput {
 function validateModelFindings(input: {
   input: ReviewInput;
   profile: RepoProfile;
-  evidenceItems: PromptEvidenceItem[];
+  evidenceItems: ReviewEvidenceItem[];
   findings: ModelReviewOutput["findings"];
 }): { findings: ReviewFinding[]; residualRisk: string[] } {
   const findings: ReviewFinding[] = [];
@@ -767,7 +767,7 @@ function validateModelFindings(input: {
 
 function modelContributionTriage(input: {
   model: ModelReviewOutput["contributionTriage"];
-  evidenceItems: PromptEvidenceItem[];
+  evidenceItems: ReviewEvidenceItem[];
 }): {
   result: ReviewResult["contributionTriage"];
   residualRisk: string[];
@@ -816,7 +816,7 @@ function modelContributionTriage(input: {
 }
 
 function citationFromEvidenceItem(
-  item: PromptEvidenceItem,
+  item: ReviewEvidenceItem,
   reason: string,
 ): ReviewEvidenceCitation {
   switch (item.kind) {
@@ -890,14 +890,14 @@ function formatModelResidualRisk(
   return `${risk.risk} ${risk.reason} Follow-up: ${risk.suggestedFollowUp}`;
 }
 
-function buildEvidenceItems(input: {
+export function buildReviewEvidenceItems(input: {
   profile: RepoProfile;
   input: ReviewInput;
   precheck: ReviewEvidencePrecheck;
   rules?: string[];
   promptContext?: ReviewPromptContext;
-}): PromptEvidenceItem[] {
-  const items: PromptEvidenceItem[] = [];
+}): ReviewEvidenceItem[] {
+  const items: ReviewEvidenceItem[] = [];
   input.input.changedFiles.forEach((file, index) => {
     items.push({
       id: `patch:${index + 1}`,
@@ -1038,10 +1038,10 @@ function buildEvidenceItems(input: {
 }
 
 function addContextEvidence(
-  items: PromptEvidenceItem[],
+  items: ReviewEvidenceItem[],
   input: {
     id: string;
-    kind: PromptEvidenceKind;
+    kind: ReviewEvidenceKind;
     path: string;
     content: string | undefined;
   },
