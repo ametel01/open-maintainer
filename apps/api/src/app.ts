@@ -27,7 +27,7 @@ import {
 import Fastify from "fastify";
 import { z } from "zod";
 import { createDashboardContextPrService } from "./context-pr-service";
-import { createRepositoryOperations } from "./repository-source-analysis";
+import { createRepositorySourceLifecycle } from "./repository-source-analysis";
 import { createDashboardReviewService } from "./review-service";
 
 const sensitiveRouteRateLimit = {
@@ -37,7 +37,7 @@ const sensitiveRouteRateLimit = {
 
 export function buildApp() {
   const app = Fastify({ logger: false });
-  const repositorySources = createRepositoryOperations({
+  const repositorySources = createRepositorySourceLifecycle({
     store,
     getInstallationAuth: githubAuthForInstallation,
   });
@@ -91,14 +91,16 @@ export function buildApp() {
         const body = z
           .object({ repoRoot: z.string().min(1).max(500) })
           .parse(request.body ?? {});
-        const result = await repositorySources.registerSource({
+        const result = await repositorySources.register({
           kind: "local-worktree",
           repoRoot: path.resolve(body.repoRoot),
         });
         if (!result.ok) {
-          return reply.code(result.statusCode).send({ error: result.message });
+          return reply
+            .code(result.error.statusCode)
+            .send({ error: result.error.message });
         }
-        return { repo: result.repo, files: result.fileCount };
+        return { repo: result.value.repo, files: result.value.fileCount };
       },
     );
 
@@ -107,15 +109,17 @@ export function buildApp() {
       { config: { rateLimit: sensitiveRouteRateLimit } },
       async (request, reply) => {
         const body = RepositoryUploadRequestSchema.parse(request.body ?? {});
-        const result = await repositorySources.registerSource({
+        const result = await repositorySources.register({
           kind: "uploaded-files",
           files: body.files,
           ...(body.name ? { name: body.name } : {}),
         });
         if (!result.ok) {
-          return reply.code(result.statusCode).send({ error: result.message });
+          return reply
+            .code(result.error.statusCode)
+            .send({ error: result.error.message });
         }
-        return { repo: result.repo, files: result.fileCount };
+        return { repo: result.value.repo, files: result.value.fileCount };
       },
     );
   });
@@ -184,16 +188,17 @@ export function buildApp() {
         const { repoId } = z
           .object({ repoId: z.string() })
           .parse(request.params);
-        const result = await repositorySources.analyzeRepository({
+        const result = await repositorySources.prepare({
           repoId,
+          intent: { kind: "analyze", profile: "refresh" },
         });
         if (!result.ok) {
-          return reply.code(result.statusCode).send({
-            error: result.message,
-            ...(result.run ? { run: result.run } : {}),
+          return reply.code(result.error.statusCode).send({
+            error: result.error.message,
+            ...(result.error.run ? { run: result.error.run } : {}),
           });
         }
-        return { run: result.run, profile: result.profile };
+        return { run: result.value.run, profile: result.value.profile };
       },
     );
   });
@@ -261,13 +266,16 @@ export function buildApp() {
         async: z.boolean().optional(),
       })
       .parse(request.body ?? {});
-    const workspace = await repositorySources.prepareGeneration({ repoId });
+    const workspace = await repositorySources.prepare({
+      repoId,
+      intent: { kind: "generate-context" },
+    });
     if (!workspace.ok) {
       return reply
-        .code(workspace.statusCode)
-        .send({ error: workspace.message });
+        .code(workspace.error.statusCode)
+        .send({ error: workspace.error.message });
     }
-    const { profile } = workspace;
+    const { profile } = workspace.value;
     const provider = body.providerId
       ? (store.providers.get(body.providerId) ?? null)
       : ([...store.providers.values()][0] ?? null);
@@ -346,8 +354,8 @@ export function buildApp() {
       void generateContextArtifactsForRun({
         repoId,
         profile,
-        files: workspace.files,
-        worktreeRoot: workspace.worktreeRoot,
+        files: workspace.value.files,
+        worktreeRoot: workspace.value.worktreeRoot,
         provider,
         runId: run.id,
         context: body.context,
@@ -363,8 +371,8 @@ export function buildApp() {
       const artifacts = await generateContextArtifactsForRun({
         repoId,
         profile,
-        files: workspace.files,
-        worktreeRoot: workspace.worktreeRoot,
+        files: workspace.value.files,
+        worktreeRoot: workspace.value.worktreeRoot,
         provider,
         runId: run.id,
         context: body.context,

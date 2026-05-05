@@ -11,7 +11,7 @@ import type {
   RepoProfile,
 } from "@open-maintainer/shared";
 import { describe, expect, it } from "vitest";
-import type { RepositorySourceAnalysisRegistry } from "../src/repository-source-analysis";
+import type { RepositorySourceLifecycle } from "../src/repository-source-analysis";
 import {
   type DashboardReviewCommandRunner,
   createDashboardReviewService,
@@ -48,7 +48,16 @@ describe("dashboard review service", () => {
       if (!result.ok) {
         return;
       }
-      expect(prepareCalls).toEqual([{ repoId: repo.id }]);
+      expect(prepareCalls).toEqual([
+        {
+          repoId: repo.id,
+          intent: {
+            kind: "review-preview",
+            baseRef: "HEAD~1",
+            headRef: "HEAD",
+          },
+        },
+      ]);
       expect(result.review.changedFiles.map((file) => file.path)).toEqual([
         "src/index.ts",
       ]);
@@ -132,11 +141,11 @@ describe("dashboard review service", () => {
     const service = createDashboardReviewService({
       store,
       repositorySources: {
-        async prepareReview() {
+        async prepare() {
           sourceCalled = true;
           throw new Error("source should not be prepared");
         },
-      } as RepositorySourceAnalysisRegistry,
+      } as RepositorySourceLifecycle,
       buildProvider: () => fakeModelProvider,
     });
 
@@ -203,20 +212,24 @@ function reviewSources(input: {
   profile: RepoProfile;
   worktreeRoot: string;
   prepareCalls?: unknown[];
-}): RepositorySourceAnalysisRegistry {
+}): RepositorySourceLifecycle {
   return {
-    async prepareReview(request) {
+    async prepare(request) {
       input.prepareCalls?.push(request);
       return {
         ok: true,
-        repo: input.repo,
-        files: [],
-        profile: input.profile,
-        profileCreated: false,
-        worktreeRoot: input.worktreeRoot,
+        value: {
+          repo: input.repo,
+          files: [],
+          profile: input.profile,
+          profileCreated: false,
+          run: null,
+          source: "local-worktree",
+          worktreeRoot: input.worktreeRoot,
+        },
       };
     },
-  } as RepositorySourceAnalysisRegistry;
+  };
 }
 
 function reviewRepo(_repoRoot: string): Repo {

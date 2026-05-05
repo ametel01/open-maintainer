@@ -33,7 +33,7 @@ import {
   nowIso,
 } from "@open-maintainer/shared";
 import { z } from "zod";
-import type { RepositorySourceAnalysisRegistry } from "./repository-source-analysis";
+import type { RepositorySourceLifecycle } from "./repository-source-analysis";
 
 const execFileAsync = promisify(execFile);
 
@@ -73,7 +73,7 @@ export type DashboardReviewCommandRunner = (input: {
 
 export function createDashboardReviewService(input: {
   store: MemoryStore;
-  repositorySources: RepositorySourceAnalysisRegistry;
+  repositorySources: RepositorySourceLifecycle;
   getInstallationAuth?: (
     installationId: string,
   ) => GitHubAppInstallationAuth | null;
@@ -204,7 +204,7 @@ export function createDashboardReviewService(input: {
 
 function createApiReviewOperationDeps(input: {
   repo: Repo;
-  repositorySources: RepositorySourceAnalysisRegistry;
+  repositorySources: RepositorySourceLifecycle;
   provider: ModelProviderConfig;
   store: MemoryStore;
   getInstallationAuth?: (
@@ -335,7 +335,7 @@ function reviewPreviewStatusCode(error: unknown): 409 | 422 {
 async function prepareReviewPreviewInput(input: {
   repoId: string;
   repo: Repo;
-  repositorySources: RepositorySourceAnalysisRegistry;
+  repositorySources: RepositorySourceLifecycle;
   getInstallationAuth?: (
     installationId: string,
   ) => GitHubAppInstallationAuth | null;
@@ -362,37 +362,51 @@ async function prepareReviewPreviewInput(input: {
           error: `No changed files were detected for PR #${input.prNumber}. Check the pull request before creating a review preview.`,
         };
       }
-      const workspace = await input.repositorySources.prepareReview({
+      const workspace = await input.repositorySources.prepare({
         repoId: input.repoId,
-        ref: githubReviewInput.baseRef,
+        intent: {
+          kind: "review-preview",
+          baseRef: githubReviewInput.baseRef,
+          ...(input.prNumber ? { prNumber: input.prNumber } : {}),
+        },
       });
       if (!workspace.ok) {
         return {
           ok: false,
-          statusCode: workspace.statusCode === 404 ? 409 : workspace.statusCode,
-          error: workspace.message,
+          statusCode:
+            workspace.error.statusCode === 404
+              ? 409
+              : workspace.error.statusCode,
+          error: workspace.error.message,
         };
       }
       return {
         ok: true,
-        profile: workspace.profile,
+        profile: workspace.value.profile,
         reviewInput: githubReviewInput,
-        worktreeRoot: workspace.worktreeRoot,
+        worktreeRoot: workspace.value.worktreeRoot,
       };
     }
   }
 
-  const workspace = await input.repositorySources.prepareReview({
+  const workspace = await input.repositorySources.prepare({
     repoId: input.repoId,
+    intent: {
+      kind: "review-preview",
+      ...(input.baseRef ? { baseRef: input.baseRef } : {}),
+      ...(input.headRef ? { headRef: input.headRef } : {}),
+      ...(input.prNumber ? { prNumber: input.prNumber } : {}),
+    },
   });
   if (!workspace.ok) {
     return {
       ok: false,
-      statusCode: workspace.statusCode === 404 ? 409 : workspace.statusCode,
-      error: workspace.message,
+      statusCode:
+        workspace.error.statusCode === 404 ? 409 : workspace.error.statusCode,
+      error: workspace.error.message,
     };
   }
-  const worktreeRoot = workspace.worktreeRoot;
+  const worktreeRoot = workspace.value.worktreeRoot;
   if (!worktreeRoot) {
     return {
       ok: false,
@@ -446,7 +460,7 @@ async function prepareReviewPreviewInput(input: {
 
   return {
     ok: true,
-    profile: workspace.profile,
+    profile: workspace.value.profile,
     reviewInput: {
       ...localReviewInput,
       owner: input.repo.owner,

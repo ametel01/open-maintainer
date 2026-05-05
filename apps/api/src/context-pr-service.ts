@@ -23,8 +23,8 @@ import {
   nowIso,
 } from "@open-maintainer/shared";
 import type {
-  RepositorySourceAnalysisError,
-  RepositorySourceAnalysisRegistry,
+  RepositoryLifecycleError,
+  RepositorySourceLifecycle,
 } from "./repository-source-analysis";
 
 const execFileAsync = promisify(execFile);
@@ -52,7 +52,7 @@ export type LocalGhContextPrPublisherOptions = {
 
 export function createDashboardContextPrService(input: {
   store: MemoryStore;
-  repositorySources: RepositorySourceAnalysisRegistry;
+  repositorySources: RepositorySourceLifecycle;
   getInstallationAuth?: (
     installationId: string,
   ) => GitHubAppInstallationAuth | null;
@@ -94,7 +94,7 @@ export function createDashboardContextPrService(input: {
 
 function createDashboardContextPrWorkflowDeps(input: {
   store: MemoryStore;
-  repositorySources: RepositorySourceAnalysisRegistry;
+  repositorySources: RepositorySourceLifecycle;
   localPublisher: ContextPrPublisher;
   githubAppPublisher: ContextPrPublisher;
   scanRepository: typeof scanRepository;
@@ -146,27 +146,28 @@ function createDashboardContextPrWorkflowDeps(input: {
     },
     repositorySources: {
       async prepareRegisteredRepo(repoId) {
-        const workspace = await input.repositorySources.prepareContextPr({
+        const workspace = await input.repositorySources.prepare({
           repoId,
+          intent: { kind: "context-pr" },
         });
         if (!workspace.ok) {
           throw {
             ok: false as const,
-            statusCode: workspace.statusCode,
-            code: contextPrSourceErrorCode(workspace.code),
-            message: workspace.message,
-            run: workspace.run ?? null,
+            statusCode: workspace.error.statusCode,
+            code: contextPrSourceErrorCode(workspace.error.code),
+            message: workspace.error.message,
+            run: workspace.error.run,
           };
         }
         return {
           repoId,
-          owner: workspace.repo.owner,
-          name: workspace.repo.name,
-          defaultBranch: workspace.repo.defaultBranch,
-          profileVersion: workspace.profile.version,
-          profile: workspace.profile,
-          worktreeRoot: workspace.worktreeRoot,
-          installationId: workspace.repo.installationId,
+          owner: workspace.value.repo.owner,
+          name: workspace.value.repo.name,
+          defaultBranch: workspace.value.repo.defaultBranch,
+          profileVersion: workspace.value.profile.version,
+          profile: workspace.value.profile,
+          worktreeRoot: workspace.value.worktreeRoot,
+          installationId: workspace.value.repo.installationId,
         };
       },
       async prepareWorkspace() {
@@ -203,7 +204,7 @@ function createDashboardContextPrWorkflowDeps(input: {
 }
 
 function contextPrSourceErrorCode(
-  code: RepositorySourceAnalysisError["code"],
+  code: RepositoryLifecycleError["code"],
 ): "UNKNOWN_REPO" | "NO_PROFILE" | "WORKTREE_UNAVAILABLE" {
   if (code === "NO_PROFILE" || code === "WORKTREE_UNAVAILABLE") {
     return code;
