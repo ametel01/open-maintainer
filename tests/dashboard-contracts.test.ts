@@ -1,4 +1,5 @@
 import type {
+  AuthReadiness,
   Health,
   Repo,
   RepoProfile,
@@ -91,6 +92,27 @@ describe("dashboard view model", () => {
             api: "ok",
           } satisfies Partial<Health>);
         }
+        if (url.endsWith("/auth/ready")) {
+          return Response.json({
+            ghAuth: {
+              status: "ok",
+              error: null,
+              checkedAt: "2026-05-04T00:00:00.000Z",
+            },
+            codexAuth: {
+              status: "ok",
+              error: null,
+              checkedAt: "2026-05-04T00:00:00.000Z",
+            },
+            claudeAuth: {
+              status: "ok",
+              error: null,
+              checkedAt: "2026-05-04T00:00:00.000Z",
+            },
+            authReady: true,
+            checkedAt: "2026-05-04T00:00:00.000Z",
+          } satisfies AuthReadiness);
+        }
         if (url.endsWith("/repos")) {
           return Response.json({ repos: [repo] });
         }
@@ -133,6 +155,7 @@ describe("dashboard view model", () => {
 
     expect(requests).toEqual([
       "/health",
+      "/auth/ready",
       "/repos",
       "/model-providers",
       `/repos/${repo.id}/profile`,
@@ -141,6 +164,7 @@ describe("dashboard view model", () => {
       `/repos/${repo.id}/reviews`,
     ]);
     expect(view.repo?.id).toBe(repo.id);
+    expect(view.authReadiness?.authReady).toBe(true);
     expect(view.selectedProvider?.kind).toBe("claude-cli");
     expect(view.defaultArtifactSelection).toBe("claude");
     expect(view.readiness?.score).toBe(92);

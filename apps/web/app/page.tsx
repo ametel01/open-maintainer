@@ -1,4 +1,8 @@
-import type { ReviewResult, RunRecord } from "@open-maintainer/shared";
+import type {
+  AuthReadiness,
+  ReviewResult,
+  RunRecord,
+} from "@open-maintainer/shared";
 import { LocalRepoPicker } from "./LocalRepoPicker";
 import {
   type RunWithContext,
@@ -16,6 +20,7 @@ export default async function Dashboard({ searchParams }: DashboardProps) {
   const view = await loadDashboardViewModel({ searchParams: params });
   const {
     health,
+    authReadiness,
     repos,
     repo,
     profile,
@@ -30,6 +35,7 @@ export default async function Dashboard({ searchParams }: DashboardProps) {
     contextActionLabel,
   } = view;
   const { localRepoError, actionError, providerError } = view.errors;
+  const authWarning = authReadinessMessage(authReadiness);
 
   return (
     <main>
@@ -49,7 +55,18 @@ export default async function Dashboard({ searchParams }: DashboardProps) {
           <StatusCard label="Postgres" value={health?.database} />
           <StatusCard label="Redis" value={health?.redis} />
           <StatusCard label="Worker" value={health?.worker} />
+          <StatusCard
+            label="Auth"
+            value={
+              authReadiness?.authReady
+                ? "ok"
+                : authReadiness
+                  ? "missing"
+                  : undefined
+            }
+          />
         </section>
+        {authWarning ? <p className="error">{authWarning}</p> : null}
 
         <section className="columns">
           <div className="panel">
@@ -988,6 +1005,25 @@ function providerErrorMessage(error: string): string {
   return parsed.detail
     ? `Provider setup failed with API status ${parsed.status}. ${parsed.detail}`
     : `Provider setup failed with API status ${parsed.status}.`;
+}
+
+function authReadinessMessage(authReadiness: AuthReadiness | null): string {
+  if (!authReadiness || authReadiness.authReady) {
+    return "";
+  }
+  const missing = [
+    authToolMessage("gh", authReadiness.ghAuth),
+    authToolMessage("codex", authReadiness.codexAuth),
+    authToolMessage("claude", authReadiness.claudeAuth),
+  ].filter((message) => message.length > 0);
+  return `Auth readiness is degraded: ${missing.join("; ")}.`;
+}
+
+function authToolMessage(label: string, tool: AuthReadiness["ghAuth"]): string {
+  if (tool.status === "ok") {
+    return "";
+  }
+  return tool.error ? `${label}: ${tool.error}` : `${label}: auth missing`;
 }
 
 function parseStatusError(error: string): { status: string; detail: string } {

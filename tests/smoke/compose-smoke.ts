@@ -1,6 +1,6 @@
 const apiBaseUrl =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
-const webBaseUrl = process.env.WEB_BASE_URL ?? "http://localhost:3000";
+  process.env["NEXT_PUBLIC_API_BASE_URL"] ?? "http://localhost:4000";
+const webBaseUrl = process.env["WEB_BASE_URL"] ?? "http://localhost:3000";
 
 async function waitFor(url: string, label: string) {
   const deadline = Date.now() + 60_000;
@@ -37,6 +37,38 @@ if (
   health.worker !== "ok"
 ) {
   throw new Error(`Compose smoke failed: ${JSON.stringify(health)}`);
+}
+
+const authReadyResponse = await fetch(`${apiBaseUrl}/auth/ready`);
+if (!authReadyResponse.ok) {
+  throw new Error(
+    `Auth readiness check failed with HTTP ${authReadyResponse.status}`,
+  );
+}
+const authReady = (await authReadyResponse.json()) as {
+  ghAuth?: { status?: string };
+  codexAuth?: { status?: string };
+  claudeAuth?: { status?: string };
+  authReady?: unknown;
+};
+if (typeof authReady.authReady !== "boolean") {
+  throw new Error("Auth readiness payload did not include authReady boolean.");
+}
+if (
+  typeof authReady.ghAuth?.status !== "string" ||
+  typeof authReady.codexAuth?.status !== "string" ||
+  typeof authReady.claudeAuth?.status !== "string"
+) {
+  throw new Error("Auth readiness payload did not include provider statuses.");
+}
+if (
+  process.env["OPEN_MAINTAINER_STRICT_STARTUP_AUTH"]?.toLowerCase() ===
+    "true" &&
+  !authReady.authReady
+) {
+  throw new Error(
+    "Strict startup auth mode is enabled but /auth/ready reported authReady=false.",
+  );
 }
 
 console.log("Docker Compose smoke passed.");

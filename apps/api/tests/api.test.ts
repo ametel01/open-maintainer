@@ -10,7 +10,7 @@ import { createFakeCodexCli } from "../../../tests/helpers/fake-model-cli";
 import { buildApp } from "../src/app";
 
 const execFileAsync = promisify(execFile);
-const app = buildApp();
+const app = buildApp({ authReadiness: async () => authReadinessFixture() });
 
 beforeAll(async () => {
   await app.ready();
@@ -19,6 +19,39 @@ beforeAll(async () => {
 afterAll(async () => {
   await app.close();
 });
+
+function authReadinessFixture(input?: {
+  ghAuth?: { status: "ok" | "missing"; error: string | null };
+  codexAuth?: { status: "ok" | "missing"; error: string | null };
+  claudeAuth?: { status: "ok" | "missing"; error: string | null };
+}) {
+  const checkedAt = new Date("2026-01-01T00:00:00.000Z").toISOString();
+  const ghAuth = {
+    status: input?.ghAuth?.status ?? ("ok" as const),
+    error: input?.ghAuth?.error ?? null,
+    checkedAt,
+  };
+  const codexAuth = {
+    status: input?.codexAuth?.status ?? ("ok" as const),
+    error: input?.codexAuth?.error ?? null,
+    checkedAt,
+  };
+  const claudeAuth = {
+    status: input?.claudeAuth?.status ?? ("ok" as const),
+    error: input?.claudeAuth?.error ?? null,
+    checkedAt,
+  };
+  return {
+    ghAuth,
+    codexAuth,
+    claudeAuth,
+    authReady:
+      ghAuth.status === "ok" &&
+      codexAuth.status === "ok" &&
+      claudeAuth.status === "ok",
+    checkedAt,
+  };
+}
 
 async function createLocalReviewRepo(): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), "api-review-test-"));
@@ -128,6 +161,157 @@ process.exit(1);
 }
 
 describe("MVP API", () => {
+  it("returns auth readiness when all CLI auth checks pass", async () => {
+    const authApp = buildApp({
+      authReadiness: async () => authReadinessFixture(),
+    });
+    try {
+      await authApp.ready();
+      const response = await authApp.inject({
+        method: "GET",
+        url: "/auth/ready",
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().authReady).toBe(true);
+      expect(response.json().ghAuth.status).toBe("ok");
+      expect(response.json().codexAuth.status).toBe("ok");
+      expect(response.json().claudeAuth.status).toBe("ok");
+    } finally {
+      await authApp.close();
+    }
+  });
+
+  it("returns launch-time cached auth readiness in non-strict mode", async () => {
+    let checks = 0;
+    const authApp = buildApp({
+      authReadiness: async () => {
+        checks += 1;
+        return authReadinessFixture({
+          ghAuth: { status: "missing", error: "gh auth status failed" },
+        });
+      },
+    });
+    try {
+      await authApp.ready();
+      const first = await authApp.inject({
+        method: "GET",
+        url: "/auth/ready",
+      });
+      const second = await authApp.inject({
+        method: "GET",
+        url: "/auth/ready",
+      });
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(200);
+      expect(first.json().authReady).toBe(false);
+      expect(second.json()).toEqual(first.json());
+      expect(checks).toBe(1);
+    } finally {
+      await authApp.close();
+    }
+  });
+
+  it("returns degraded auth readiness when only gh auth is missing", async () => {
+    const authApp = buildApp({
+      authReadiness: async () =>
+        authReadinessFixture({
+          ghAuth: { status: "missing", error: "gh auth status failed" },
+        }),
+    });
+    try {
+      await authApp.ready();
+      const response = await authApp.inject({
+        method: "GET",
+        url: "/auth/ready",
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().authReady).toBe(false);
+      expect(response.json().ghAuth.status).toBe("missing");
+      expect(response.json().codexAuth.status).toBe("ok");
+      expect(response.json().claudeAuth.status).toBe("ok");
+    } finally {
+      await authApp.close();
+    }
+  });
+
+  it("returns degraded auth readiness when only codex auth is missing", async () => {
+    const authApp = buildApp({
+      authReadiness: async () =>
+        authReadinessFixture({
+          codexAuth: {
+            status: "missing",
+            error: "Codex CLI auth missing",
+          },
+        }),
+    });
+    try {
+      await authApp.ready();
+      const response = await authApp.inject({
+        method: "GET",
+        url: "/auth/ready",
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().authReady).toBe(false);
+      expect(response.json().ghAuth.status).toBe("ok");
+      expect(response.json().codexAuth.status).toBe("missing");
+      expect(response.json().claudeAuth.status).toBe("ok");
+    } finally {
+      await authApp.close();
+    }
+  });
+
+  it("returns degraded auth readiness when only claude auth is missing", async () => {
+    const authApp = buildApp({
+      authReadiness: async () =>
+        authReadinessFixture({
+          claudeAuth: {
+            status: "missing",
+            error: "Claude CLI auth missing",
+          },
+        }),
+    });
+    try {
+      await authApp.ready();
+      const response = await authApp.inject({
+        method: "GET",
+        url: "/auth/ready",
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().authReady).toBe(false);
+      expect(response.json().ghAuth.status).toBe("ok");
+      expect(response.json().codexAuth.status).toBe("ok");
+      expect(response.json().claudeAuth.status).toBe("missing");
+    } finally {
+      await authApp.close();
+    }
+  });
+
+  it("fails startup in strict auth mode when readiness checks fail", async () => {
+    const previousStrict = process.env["OPEN_MAINTAINER_STRICT_STARTUP_AUTH"];
+    process.env["OPEN_MAINTAINER_STRICT_STARTUP_AUTH"] = "true";
+    const strictApp = buildApp({
+      authReadiness: async () =>
+        authReadinessFixture({
+          ghAuth: { status: "missing", error: "gh auth status failed" },
+        }),
+    });
+    try {
+      await expect(strictApp.ready()).rejects.toThrow(
+        /Strict startup auth readiness failed/,
+      );
+    } finally {
+      await strictApp.close().catch(() => undefined);
+      if (previousStrict === undefined) {
+        Reflect.deleteProperty(
+          process.env,
+          "OPEN_MAINTAINER_STRICT_STARTUP_AUTH",
+        );
+      } else {
+        process.env["OPEN_MAINTAINER_STRICT_STARTUP_AUTH"] = previousStrict;
+      }
+    }
+  });
+
   it("reports service health and worker heartbeat", async () => {
     const beforeRuns = await app.inject({
       method: "GET",
@@ -171,16 +355,16 @@ describe("MVP API", () => {
   it("accepts CLI model providers for dashboard setup", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "api-cli-test-"));
     const command = path.join(directory, "fake-cli.js");
-    const previousCodexCommand = process.env.OPEN_MAINTAINER_CODEX_COMMAND;
-    const previousClaudeCommand = process.env.OPEN_MAINTAINER_CLAUDE_COMMAND;
+    const previousCodexCommand = process.env["OPEN_MAINTAINER_CODEX_COMMAND"];
+    const previousClaudeCommand = process.env["OPEN_MAINTAINER_CLAUDE_COMMAND"];
     try {
       await writeFile(
         command,
         "#!/usr/bin/env node\nprocess.stdout.write('fake-cli 1.0.0\\n');\n",
       );
       await chmod(command, 0o755);
-      process.env.OPEN_MAINTAINER_CODEX_COMMAND = command;
-      process.env.OPEN_MAINTAINER_CLAUDE_COMMAND = command;
+      process.env["OPEN_MAINTAINER_CODEX_COMMAND"] = command;
+      process.env["OPEN_MAINTAINER_CLAUDE_COMMAND"] = command;
 
       const codex = await app.inject({
         method: "POST",
@@ -216,12 +400,12 @@ describe("MVP API", () => {
       if (previousCodexCommand === undefined) {
         Reflect.deleteProperty(process.env, "OPEN_MAINTAINER_CODEX_COMMAND");
       } else {
-        process.env.OPEN_MAINTAINER_CODEX_COMMAND = previousCodexCommand;
+        process.env["OPEN_MAINTAINER_CODEX_COMMAND"] = previousCodexCommand;
       }
       if (previousClaudeCommand === undefined) {
         Reflect.deleteProperty(process.env, "OPEN_MAINTAINER_CLAUDE_COMMAND");
       } else {
-        process.env.OPEN_MAINTAINER_CLAUDE_COMMAND = previousClaudeCommand;
+        process.env["OPEN_MAINTAINER_CLAUDE_COMMAND"] = previousClaudeCommand;
       }
       await rm(directory, { recursive: true, force: true });
     }
@@ -279,8 +463,8 @@ describe("MVP API", () => {
   it("creates dashboard PR review previews and guards posting", async () => {
     const repoRoot = await createLocalReviewRepo();
     const fakeCodex = await createFakeCodexCli();
-    const previousCodexCommand = process.env.OPEN_MAINTAINER_CODEX_COMMAND;
-    process.env.OPEN_MAINTAINER_CODEX_COMMAND = fakeCodex.command;
+    const previousCodexCommand = process.env["OPEN_MAINTAINER_CODEX_COMMAND"];
+    process.env["OPEN_MAINTAINER_CODEX_COMMAND"] = fakeCodex.command;
     const registered = await app.inject({
       method: "POST",
       url: "/repos/local",
@@ -321,7 +505,7 @@ describe("MVP API", () => {
     if (previousCodexCommand === undefined) {
       Reflect.deleteProperty(process.env, "OPEN_MAINTAINER_CODEX_COMMAND");
     } else {
-      process.env.OPEN_MAINTAINER_CODEX_COMMAND = previousCodexCommand;
+      process.env["OPEN_MAINTAINER_CODEX_COMMAND"] = previousCodexCommand;
     }
     expect(created.statusCode).toBe(200);
     expect(created.json().run.type).toBe("review");
@@ -378,11 +562,11 @@ describe("MVP API", () => {
     const repoRoot = await createLocalPullRequestRepo();
     const fakeCodex = await createFakeCodexCli();
     const fakeGh = await createFakeGhCli();
-    const previousCodexCommand = process.env.OPEN_MAINTAINER_CODEX_COMMAND;
-    const previousGhCommand = process.env.OPEN_MAINTAINER_GH_COMMAND;
+    const previousCodexCommand = process.env["OPEN_MAINTAINER_CODEX_COMMAND"];
+    const previousGhCommand = process.env["OPEN_MAINTAINER_GH_COMMAND"];
     try {
-      process.env.OPEN_MAINTAINER_CODEX_COMMAND = fakeCodex.command;
-      process.env.OPEN_MAINTAINER_GH_COMMAND = fakeGh;
+      process.env["OPEN_MAINTAINER_CODEX_COMMAND"] = fakeCodex.command;
+      process.env["OPEN_MAINTAINER_GH_COMMAND"] = fakeGh;
       const registered = await app.inject({
         method: "POST",
         url: "/repos/local",
@@ -429,12 +613,12 @@ describe("MVP API", () => {
       if (previousCodexCommand === undefined) {
         Reflect.deleteProperty(process.env, "OPEN_MAINTAINER_CODEX_COMMAND");
       } else {
-        process.env.OPEN_MAINTAINER_CODEX_COMMAND = previousCodexCommand;
+        process.env["OPEN_MAINTAINER_CODEX_COMMAND"] = previousCodexCommand;
       }
       if (previousGhCommand === undefined) {
         Reflect.deleteProperty(process.env, "OPEN_MAINTAINER_GH_COMMAND");
       } else {
-        process.env.OPEN_MAINTAINER_GH_COMMAND = previousGhCommand;
+        process.env["OPEN_MAINTAINER_GH_COMMAND"] = previousGhCommand;
       }
     }
   });
@@ -443,11 +627,11 @@ describe("MVP API", () => {
     const repoRoot = await createLocalPullRequestRepo();
     const fakeCodex = await createFakeCodexCli();
     const fakeGh = await createFailingGhCli();
-    const previousCodexCommand = process.env.OPEN_MAINTAINER_CODEX_COMMAND;
-    const previousGhCommand = process.env.OPEN_MAINTAINER_GH_COMMAND;
+    const previousCodexCommand = process.env["OPEN_MAINTAINER_CODEX_COMMAND"];
+    const previousGhCommand = process.env["OPEN_MAINTAINER_GH_COMMAND"];
     try {
-      process.env.OPEN_MAINTAINER_CODEX_COMMAND = fakeCodex.command;
-      process.env.OPEN_MAINTAINER_GH_COMMAND = fakeGh;
+      process.env["OPEN_MAINTAINER_CODEX_COMMAND"] = fakeCodex.command;
+      process.env["OPEN_MAINTAINER_GH_COMMAND"] = fakeGh;
       const registered = await app.inject({
         method: "POST",
         url: "/repos/local",
@@ -488,12 +672,12 @@ describe("MVP API", () => {
       if (previousCodexCommand === undefined) {
         Reflect.deleteProperty(process.env, "OPEN_MAINTAINER_CODEX_COMMAND");
       } else {
-        process.env.OPEN_MAINTAINER_CODEX_COMMAND = previousCodexCommand;
+        process.env["OPEN_MAINTAINER_CODEX_COMMAND"] = previousCodexCommand;
       }
       if (previousGhCommand === undefined) {
         Reflect.deleteProperty(process.env, "OPEN_MAINTAINER_GH_COMMAND");
       } else {
-        process.env.OPEN_MAINTAINER_GH_COMMAND = previousGhCommand;
+        process.env["OPEN_MAINTAINER_GH_COMMAND"] = previousGhCommand;
       }
     }
   });
@@ -671,13 +855,15 @@ describe("MVP API", () => {
     const ghCommand = path.join(directory, "fake-gh.js");
     const repoRoot = path.join(directory, "repo");
     const remoteRoot = path.join(directory, "remote.git");
-    const previousCodexCommand = process.env.OPEN_MAINTAINER_CODEX_COMMAND;
-    const previousGhCommand = process.env.OPEN_MAINTAINER_GH_COMMAND;
+    const previousCodexCommand = process.env["OPEN_MAINTAINER_CODEX_COMMAND"];
+    const previousGhCommand = process.env["OPEN_MAINTAINER_GH_COMMAND"];
     const previousMountedRoots =
-      process.env.OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS;
-    const previousGitAuthorName = process.env.OPEN_MAINTAINER_GIT_AUTHOR_NAME;
-    const previousGitAuthorEmail = process.env.OPEN_MAINTAINER_GIT_AUTHOR_EMAIL;
-    const previousGhToken = process.env.GH_TOKEN;
+      process.env["OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS"];
+    const previousGitAuthorName =
+      process.env["OPEN_MAINTAINER_GIT_AUTHOR_NAME"];
+    const previousGitAuthorEmail =
+      process.env["OPEN_MAINTAINER_GIT_AUTHOR_EMAIL"];
+    const previousGhToken = process.env["GH_TOKEN"];
     try {
       await execFileAsync("git", ["init", "-b", "main", repoRoot]);
       await writeFile(
@@ -807,12 +993,12 @@ process.exit(2);
 `,
       );
       await chmod(ghCommand, 0o755);
-      process.env.OPEN_MAINTAINER_CODEX_COMMAND = command;
-      process.env.OPEN_MAINTAINER_GH_COMMAND = ghCommand;
-      process.env.OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS = repoRoot;
-      process.env.OPEN_MAINTAINER_GIT_AUTHOR_NAME = "Dashboard Bot";
-      process.env.OPEN_MAINTAINER_GIT_AUTHOR_EMAIL = "dashboard@example.com";
-      process.env.GH_TOKEN = "test-token";
+      process.env["OPEN_MAINTAINER_CODEX_COMMAND"] = command;
+      process.env["OPEN_MAINTAINER_GH_COMMAND"] = ghCommand;
+      process.env["OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS"] = repoRoot;
+      process.env["OPEN_MAINTAINER_GIT_AUTHOR_NAME"] = "Dashboard Bot";
+      process.env["OPEN_MAINTAINER_GIT_AUTHOR_EMAIL"] = "dashboard@example.com";
+      process.env["GH_TOKEN"] = "test-token";
 
       const repoResponse = await app.inject({
         method: "POST",
@@ -930,12 +1116,12 @@ process.exit(2);
       if (previousCodexCommand === undefined) {
         Reflect.deleteProperty(process.env, "OPEN_MAINTAINER_CODEX_COMMAND");
       } else {
-        process.env.OPEN_MAINTAINER_CODEX_COMMAND = previousCodexCommand;
+        process.env["OPEN_MAINTAINER_CODEX_COMMAND"] = previousCodexCommand;
       }
       if (previousGhCommand === undefined) {
         Reflect.deleteProperty(process.env, "OPEN_MAINTAINER_GH_COMMAND");
       } else {
-        process.env.OPEN_MAINTAINER_GH_COMMAND = previousGhCommand;
+        process.env["OPEN_MAINTAINER_GH_COMMAND"] = previousGhCommand;
       }
       if (previousMountedRoots === undefined) {
         Reflect.deleteProperty(
@@ -943,22 +1129,24 @@ process.exit(2);
           "OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS",
         );
       } else {
-        process.env.OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS = previousMountedRoots;
+        process.env["OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS"] =
+          previousMountedRoots;
       }
       if (previousGitAuthorName === undefined) {
         Reflect.deleteProperty(process.env, "OPEN_MAINTAINER_GIT_AUTHOR_NAME");
       } else {
-        process.env.OPEN_MAINTAINER_GIT_AUTHOR_NAME = previousGitAuthorName;
+        process.env["OPEN_MAINTAINER_GIT_AUTHOR_NAME"] = previousGitAuthorName;
       }
       if (previousGitAuthorEmail === undefined) {
         Reflect.deleteProperty(process.env, "OPEN_MAINTAINER_GIT_AUTHOR_EMAIL");
       } else {
-        process.env.OPEN_MAINTAINER_GIT_AUTHOR_EMAIL = previousGitAuthorEmail;
+        process.env["OPEN_MAINTAINER_GIT_AUTHOR_EMAIL"] =
+          previousGitAuthorEmail;
       }
       if (previousGhToken === undefined) {
         Reflect.deleteProperty(process.env, "GH_TOKEN");
       } else {
-        process.env.GH_TOKEN = previousGhToken;
+        process.env["GH_TOKEN"] = previousGhToken;
       }
       await rm(directory, { recursive: true, force: true });
     }
@@ -971,12 +1159,14 @@ process.exit(2);
     const ghCommand = path.join(directory, "fake-gh.js");
     const repoRoot = path.join(directory, "repo");
     const remoteRoot = path.join(directory, "remote.git");
-    const previousGhCommand = process.env.OPEN_MAINTAINER_GH_COMMAND;
+    const previousGhCommand = process.env["OPEN_MAINTAINER_GH_COMMAND"];
     const previousMountedRoots =
-      process.env.OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS;
-    const previousGitAuthorName = process.env.OPEN_MAINTAINER_GIT_AUTHOR_NAME;
-    const previousGitAuthorEmail = process.env.OPEN_MAINTAINER_GIT_AUTHOR_EMAIL;
-    const previousGhToken = process.env.GH_TOKEN;
+      process.env["OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS"];
+    const previousGitAuthorName =
+      process.env["OPEN_MAINTAINER_GIT_AUTHOR_NAME"];
+    const previousGitAuthorEmail =
+      process.env["OPEN_MAINTAINER_GIT_AUTHOR_EMAIL"];
+    const previousGhToken = process.env["GH_TOKEN"];
     try {
       await execFileAsync("git", ["init", "-b", "main", repoRoot]);
       await writeFile(
@@ -1063,11 +1253,11 @@ process.exit(2);
 `,
       );
       await chmod(ghCommand, 0o755);
-      process.env.OPEN_MAINTAINER_GH_COMMAND = ghCommand;
-      process.env.OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS = repoRoot;
-      process.env.OPEN_MAINTAINER_GIT_AUTHOR_NAME = "Dashboard Bot";
-      process.env.OPEN_MAINTAINER_GIT_AUTHOR_EMAIL = "dashboard@example.com";
-      process.env.GH_TOKEN = "test-token";
+      process.env["OPEN_MAINTAINER_GH_COMMAND"] = ghCommand;
+      process.env["OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS"] = repoRoot;
+      process.env["OPEN_MAINTAINER_GIT_AUTHOR_NAME"] = "Dashboard Bot";
+      process.env["OPEN_MAINTAINER_GIT_AUTHOR_EMAIL"] = "dashboard@example.com";
+      process.env["GH_TOKEN"] = "test-token";
 
       const repoResponse = await app.inject({
         method: "POST",
@@ -1125,7 +1315,7 @@ process.exit(2);
       if (previousGhCommand === undefined) {
         Reflect.deleteProperty(process.env, "OPEN_MAINTAINER_GH_COMMAND");
       } else {
-        process.env.OPEN_MAINTAINER_GH_COMMAND = previousGhCommand;
+        process.env["OPEN_MAINTAINER_GH_COMMAND"] = previousGhCommand;
       }
       if (previousMountedRoots === undefined) {
         Reflect.deleteProperty(
@@ -1133,22 +1323,24 @@ process.exit(2);
           "OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS",
         );
       } else {
-        process.env.OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS = previousMountedRoots;
+        process.env["OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS"] =
+          previousMountedRoots;
       }
       if (previousGitAuthorName === undefined) {
         Reflect.deleteProperty(process.env, "OPEN_MAINTAINER_GIT_AUTHOR_NAME");
       } else {
-        process.env.OPEN_MAINTAINER_GIT_AUTHOR_NAME = previousGitAuthorName;
+        process.env["OPEN_MAINTAINER_GIT_AUTHOR_NAME"] = previousGitAuthorName;
       }
       if (previousGitAuthorEmail === undefined) {
         Reflect.deleteProperty(process.env, "OPEN_MAINTAINER_GIT_AUTHOR_EMAIL");
       } else {
-        process.env.OPEN_MAINTAINER_GIT_AUTHOR_EMAIL = previousGitAuthorEmail;
+        process.env["OPEN_MAINTAINER_GIT_AUTHOR_EMAIL"] =
+          previousGitAuthorEmail;
       }
       if (previousGhToken === undefined) {
         Reflect.deleteProperty(process.env, "GH_TOKEN");
       } else {
-        process.env.GH_TOKEN = previousGhToken;
+        process.env["GH_TOKEN"] = previousGhToken;
       }
       await rm(directory, { recursive: true, force: true });
     }
@@ -1419,7 +1611,9 @@ process.exit(2);
 });
 
 async function expectPostRouteIsRateLimited(url: string): Promise<void> {
-  const limitedApp = buildApp();
+  const limitedApp = buildApp({
+    authReadiness: async () => authReadinessFixture(),
+  });
   await limitedApp.ready();
   try {
     for (let attempt = 0; attempt < 10; attempt += 1) {

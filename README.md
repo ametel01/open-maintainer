@@ -276,6 +276,27 @@ bun run diagnostics
 bun run smoke:compose
 ```
 
+The API exposes launch-time auth readiness at `GET /auth/ready` and supports strict startup mode through `OPEN_MAINTAINER_STRICT_STARTUP_AUTH=true`. By default, strict mode is off: the API starts, web and worker wait for API health, and `/auth/ready` reports `authReady: false` with per-tool error details when auth is missing. In strict mode, API startup fails until all required CLI auth checks pass (`gh`, `codex`, and `claude`).
+
+For real dashboard GitHub writes (`Open PR with gh`), use a token with minimum fine-grained repository permissions:
+
+- `Contents`: Read and write.
+- `Pull requests`: Read and write.
+- Optional: `Issues`: Read and write when using summary/issue comment posting surfaces.
+
+If your organization enforces SSO, authorize the token for that org.
+
+For OAuth-backed LLM CLIs, authenticate on the host and keep the mounted auth directories available to the API container:
+
+- `codex login` and `claude login` on the host.
+- Compose mounts `${HOME}/.codex`, `${HOME}/.claude`, and `${HOME}/.config` into the API container.
+
+If OAuth sessions expire, re-authenticate on the host and recreate the API container:
+
+```sh
+docker compose up -d --force-recreate api
+```
+
 For real GitHub App testing, configure `GITHUB_APP_ID`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_PRIVATE_KEY_BASE64`, and `GITHUB_WEBHOOK_SECRET` in `.env`.
 
 ## Architecture

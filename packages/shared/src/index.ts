@@ -1322,6 +1322,22 @@ export const HealthSchema = z.object({
 });
 export type Health = z.infer<typeof HealthSchema>;
 
+export const AuthToolStatusSchema = z.object({
+  status: z.enum(["ok", "missing"]),
+  error: z.string().nullable(),
+  checkedAt: z.string(),
+});
+export type AuthToolStatus = z.infer<typeof AuthToolStatusSchema>;
+
+export const AuthReadinessSchema = z.object({
+  ghAuth: AuthToolStatusSchema,
+  codexAuth: AuthToolStatusSchema,
+  claudeAuth: AuthToolStatusSchema,
+  authReady: z.boolean(),
+  checkedAt: z.string(),
+});
+export type AuthReadiness = z.infer<typeof AuthReadinessSchema>;
+
 export function nowIso(): string {
   return new Date().toISOString();
 }

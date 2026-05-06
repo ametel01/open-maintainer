@@ -1,4 +1,5 @@
 import type {
+  AuthReadiness,
   GeneratedArtifact,
   Health,
   ModelProviderConfig,
@@ -39,6 +40,7 @@ export type RunWithContext = RunRecord & {
 
 export type DashboardViewModel = {
   health: Health | null;
+  authReadiness: AuthReadiness | null;
   repos: Repo[];
   repo: Repo | null;
   profile: ReadinessProfile | null;
@@ -74,11 +76,13 @@ export async function loadDashboardViewModel(input: {
   const actionError = singleParam(input.searchParams.actionError);
   const providerError = singleParam(input.searchParams.providerError);
 
-  const [health, reposResponse, providersResponse] = await Promise.all([
-    api.fetchJson<Health>("/health"),
-    api.fetchJson<{ repos: Repo[] }>("/repos"),
-    api.fetchJson<{ providers: ProviderSummary[] }>("/model-providers"),
-  ]);
+  const [health, authReadiness, reposResponse, providersResponse] =
+    await Promise.all([
+      api.fetchJson<Health>("/health"),
+      api.fetchJson<AuthReadiness>("/auth/ready"),
+      api.fetchJson<{ repos: Repo[] }>("/repos"),
+      api.fetchJson<{ providers: ProviderSummary[] }>("/model-providers"),
+    ]);
   const repos = reposResponse?.repos ?? [];
   const repo = selectRepo({ repos, requestedRepo, repoQuery });
   const [profileResponse, artifactsResponse, runsResponse, reviewsResponse] =
@@ -112,6 +116,7 @@ export async function loadDashboardViewModel(input: {
   const prStatus = getPrStatus(runs);
   return {
     health,
+    authReadiness,
     repos,
     repo,
     profile,

@@ -949,6 +949,17 @@ Run health diagnostics:
 bun run diagnostics
 ```
 
+Check launch-time auth readiness:
+
+```sh
+curl -sSf http://localhost:4000/auth/ready | jq
+```
+
+With `OPEN_MAINTAINER_STRICT_STARTUP_AUTH=false`, this endpoint may report
+`authReady: false` while the dashboard still starts in degraded mode. With
+strict mode enabled, the API must pass `gh`, `codex`, and `claude` auth checks
+before web and worker services are allowed to start.
+
 Run the compose smoke gate:
 
 ```sh
@@ -976,7 +987,17 @@ the API container. Set these values in `.env`:
 GH_TOKEN=github_pat_xxx
 OPEN_MAINTAINER_GIT_AUTHOR_NAME="Open Maintainer"
 OPEN_MAINTAINER_GIT_AUTHOR_EMAIL="open-maintainer@users.noreply.github.com"
+OPEN_MAINTAINER_STRICT_STARTUP_AUTH=false
 ```
+
+Recommended minimum fine-grained GitHub token permissions for dashboard context
+PR writes:
+
+- `Contents`: Read and write.
+- `Pull requests`: Read and write.
+- Optional: `Issues`: Read and write for comment-posting surfaces.
+
+If your org enforces SSO, authorize the token for that organization.
 
 Recreate the API container after changing `.env`:
 
@@ -984,6 +1005,18 @@ Recreate the API container after changing `.env`:
 docker compose up -d --force-recreate api
 docker exec open-maintainer-api-1 gh auth status
 ```
+
+For OAuth-backed model CLIs, authenticate on the host and rely on mounted auth
+directories:
+
+```sh
+codex login
+claude login
+docker compose up -d --force-recreate api
+```
+
+If `GET /auth/ready` shows `codexAuth` or `claudeAuth` as `missing`, renew the
+host login session and recreate the API container.
 
 Dashboard PR review preview requires a registered local repository worktree.
 After selecting and analyzing a repository, use the `PR Review` panel to enter

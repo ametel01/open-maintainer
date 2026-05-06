@@ -16,6 +16,8 @@ import {
 } from "@open-maintainer/github";
 import type { GitHubAppInstallationAuth } from "@open-maintainer/github";
 import {
+  type AuthReadiness,
+  AuthReadinessSchema,
   type GeneratedArtifact,
   type ModelProviderConfig,
   type RepoProfile,
@@ -26,6 +28,11 @@ import {
 } from "@open-maintainer/shared";
 import Fastify from "fastify";
 import { z } from "zod";
+import {
+  type AuthReadinessChecker,
+  createAuthReadinessChecker,
+  strictStartupAuthEnabled,
+} from "./auth-readiness";
 import { createDashboardContextPrService } from "./context-pr-service";
 import { createRepositorySourceLifecycle } from "./repository-source-analysis";
 import { createDashboardReviewService } from "./review-service";
@@ -35,8 +42,11 @@ const sensitiveRouteRateLimit = {
   timeWindow: "1 minute",
 } as const;
 
-export function buildApp() {
+export function buildApp(input: { authReadiness?: AuthReadinessChecker } = {}) {
   const app = Fastify({ logger: false });
+  const checkAuthReadiness =
+    input.authReadiness ?? createAuthReadinessChecker();
+  let startupAuthReadiness: AuthReadiness | null = null;
   const repositorySources = createRepositorySourceLifecycle({
     store,
     getInstallationAuth: githubAuthForInstallation,
@@ -54,6 +64,36 @@ export function buildApp() {
   app.register(cors, { origin: true });
   app.register(formBody);
 
+  app.addHook("onReady", async () => {
+    const readiness = await loadStartupAuthReadiness();
+    if (!readiness.authReady) {
+      if (
+        !strictStartupAuthEnabled(
+          process.env["OPEN_MAINTAINER_STRICT_STARTUP_AUTH"],
+        )
+      ) {
+        return;
+      }
+      throw new Error(
+        [
+          "Strict startup auth readiness failed.",
+          readiness.ghAuth.error,
+          readiness.codexAuth.error,
+          readiness.claudeAuth.error,
+        ]
+          .filter((part): part is string => Boolean(part))
+          .join(" "),
+      );
+    }
+  });
+
+  async function loadStartupAuthReadiness(): Promise<AuthReadiness> {
+    startupAuthReadiness ??= AuthReadinessSchema.parse(
+      await checkAuthReadiness(),
+    );
+    return startupAuthReadiness;
+  }
+
   app.get("/health", async () => {
     const [database, redis] = await Promise.all([
       checkDatabase(),
@@ -70,6 +110,8 @@ export function buildApp() {
       checkedAt: nowIso(),
     };
   });
+
+  app.get("/auth/ready", async () => loadStartupAuthReadiness());
 
   app.post("/worker/heartbeat", async () => {
     store.workerHeartbeatAt = nowIso();
@@ -148,7 +190,7 @@ export function buildApp() {
         ? request.body
         : JSON.stringify(request.body ?? {});
     const signature256 = request.headers["x-hub-signature-256"];
-    const secret = process.env.GITHUB_WEBHOOK_SECRET || "dev-webhook-secret";
+    const secret = process.env["GITHUB_WEBHOOK_SECRET"] || "dev-webhook-secret";
     if (
       typeof signature256 !== "string" ||
       !verifyWebhookSignature({ secret, payload, signature256 })
@@ -617,8 +659,8 @@ async function generateContextArtifactsForRun(input: {
 function githubAuthForInstallation(
   installationId: string,
 ): GitHubAppInstallationAuth | null {
-  const appId = process.env.GITHUB_APP_ID;
-  const privateKeyBase64 = process.env.GITHUB_PRIVATE_KEY_BASE64;
+  const appId = process.env["GITHUB_APP_ID"];
+  const privateKeyBase64 = process.env["GITHUB_PRIVATE_KEY_BASE64"];
   if (!appId || !privateKeyBase64) {
     return null;
   }
