@@ -774,8 +774,8 @@ function createMountedWorktreeMatcher(input: {
 
 function mountedWorktreeCandidates(): string[] {
   const configuredRoots = (
-    process.env.OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS ??
-    process.env.OPEN_MAINTAINER_DASHBOARD_REPO_ROOT ??
+    process.env["OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS"] ??
+    process.env["OPEN_MAINTAINER_DASHBOARD_REPO_ROOT"] ??
     ""
   )
     .split(path.delimiter)
@@ -843,7 +843,7 @@ async function defaultRepositoryFileMaterializer(input: {
   files: RepositoryFile[];
 }): Promise<string> {
   const base =
-    process.env.OPEN_MAINTAINER_LOCAL_REPO_CACHE ??
+    process.env["OPEN_MAINTAINER_LOCAL_REPO_CACHE"] ??
     path.join(tmpdir(), "open-maintainer", "local-repos");
   const root = path.join(base, input.repoId);
   await rm(root, { recursive: true, force: true });
@@ -889,7 +889,7 @@ async function requireGitRepository(cwd: string): Promise<void> {
 async function runGit(cwd: string, args: string[]): Promise<string> {
   try {
     const { stdout } = await execFileAsync(
-      process.env.OPEN_MAINTAINER_GIT_COMMAND ?? "git",
+      process.env["OPEN_MAINTAINER_GIT_COMMAND"] ?? "git",
       args,
       {
         cwd,

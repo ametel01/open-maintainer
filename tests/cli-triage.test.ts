@@ -92,7 +92,7 @@ async function createFakeGhCli(): Promise<{
     `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
-const callsPath = process.env.OPEN_MAINTAINER_FAKE_GH_CALLS;
+const callsPath = process.env["OPEN_MAINTAINER_FAKE_GH_CALLS"];
 const inputIndex = args.indexOf("--input");
 const input = inputIndex >= 0 ? JSON.parse(fs.readFileSync(args[inputIndex + 1], "utf8")) : null;
 fs.appendFileSync(callsPath, JSON.stringify({ args, input }) + "\\n");
@@ -101,15 +101,15 @@ function write(value) {
 }
 function rejectEnvTokenIfRequested() {
   if (
-    process.env.OPEN_MAINTAINER_FAKE_GH_REJECT_ENV_TOKEN === "1" &&
-    process.env.GH_TOKEN
+    process.env["OPEN_MAINTAINER_FAKE_GH_REJECT_ENV_TOKEN"] === "1" &&
+    process.env["GH_TOKEN"]
   ) {
     console.error("gh: Resource not accessible by personal access token (HTTP 403)");
     process.exit(1);
   }
 }
 if (args[0] === "issue" && args[1] === "edit") {
-  if (process.env.OPEN_MAINTAINER_FAKE_GH_LABEL_APPLY_FAIL === "1") {
+  if (process.env["OPEN_MAINTAINER_FAKE_GH_LABEL_APPLY_FAIL"] === "1") {
     console.error("gh: Resource not accessible by personal access token (HTTP 403)");
     process.exit(1);
   }
@@ -117,7 +117,7 @@ if (args[0] === "issue" && args[1] === "edit") {
   process.exit(0);
 }
 if (args[0] === "issue" && args[1] === "comment") {
-  if (process.env.OPEN_MAINTAINER_FAKE_GH_COMMENT_FAIL === "1") {
+  if (process.env["OPEN_MAINTAINER_FAKE_GH_COMMENT_FAIL"] === "1") {
     console.error("gh: Resource not accessible by personal access token (HTTP 403)");
     process.exit(1);
   }
@@ -137,7 +137,7 @@ const methodIndex = args.indexOf("--method");
 const method = methodIndex >= 0 ? args[methodIndex + 1] : "GET";
 if (method === "POST" && /^repos\\/acme\\/triage-fixture\\/issues\\/\\d+\\/comments$/.test(endpoint)) {
   rejectEnvTokenIfRequested();
-  if (process.env.OPEN_MAINTAINER_FAKE_GH_COMMENT_FAIL === "1") {
+  if (process.env["OPEN_MAINTAINER_FAKE_GH_COMMENT_FAIL"] === "1") {
     console.error("gh: Resource not accessible by personal access token (HTTP 403)");
     process.exit(1);
   }
@@ -151,7 +151,7 @@ if (method === "POST" && endpoint === "repos/acme/triage-fixture/labels") {
 }
 if (method === "POST" && /^repos\\/acme\\/triage-fixture\\/issues\\/\\d+\\/labels$/.test(endpoint)) {
   rejectEnvTokenIfRequested();
-  if (process.env.OPEN_MAINTAINER_FAKE_GH_LABEL_APPLY_FAIL === "1") {
+  if (process.env["OPEN_MAINTAINER_FAKE_GH_LABEL_APPLY_FAIL"] === "1") {
     console.error("gh: Resource not accessible by personal access token (HTTP 403)");
     process.exit(1);
   }
@@ -159,7 +159,7 @@ if (method === "POST" && /^repos\\/acme\\/triage-fixture\\/issues\\/\\d+\\/label
   process.exit(0);
 }
 if (method === "PATCH" && endpoint === "repos/acme/triage-fixture/issues/comments/901") {
-  if (process.env.OPEN_MAINTAINER_FAKE_GH_COMMENT_FAIL === "1") {
+  if (process.env["OPEN_MAINTAINER_FAKE_GH_COMMENT_FAIL"] === "1") {
     console.error("gh: Resource not accessible by personal access token (HTTP 403)");
     process.exit(1);
   }
@@ -176,7 +176,7 @@ if (method !== "GET") {
   process.exit(1);
 }
 if (endpoint === "repos/acme/triage-fixture/issues") {
-  const labelledFirstPage = process.env.OPEN_MAINTAINER_FAKE_GH_LABELLED_FIRST_PAGE === "1";
+  const labelledFirstPage = process.env["OPEN_MAINTAINER_FAKE_GH_LABELLED_FIRST_PAGE"] === "1";
   const requestedLabelsArg = args.find((arg) => arg.startsWith("labels="));
   const requestedLabels = requestedLabelsArg ? requestedLabelsArg.replace("labels=", "").split(",").filter(Boolean) : [];
   if (labelledFirstPage && args.includes("page=1")) {
@@ -220,7 +220,7 @@ if (endpoint === "repos/acme/triage-fixture/issues/42") {
     labels: [{ name: "enhancement" }],
     state: "open",
     created_at: "2026-05-03T00:00:00.000Z",
-    updated_at: process.env.OPEN_MAINTAINER_FAKE_ISSUE_42_UPDATED_AT ?? "2026-05-03T00:01:00.000Z"
+    updated_at: process.env["OPEN_MAINTAINER_FAKE_ISSUE_42_UPDATED_AT"] ?? "2026-05-03T00:01:00.000Z"
   });
   process.exit(0);
 }
@@ -306,7 +306,7 @@ if (endpoint === "repos/acme/triage-fixture/issues/42/comments") {
   process.exit(0);
 }
 if (endpoint === "repos/acme/triage-fixture/issues/42/comments?per_page=100") {
-  if (process.env.OPEN_MAINTAINER_FAKE_EXISTING_TRIAGE_COMMENT === "1") {
+  if (process.env["OPEN_MAINTAINER_FAKE_EXISTING_TRIAGE_COMMENT"] === "1") {
     write([{
       id: 901,
       body: "<!-- open-maintainer:issue-triage -->\\nOld triage comment"
@@ -349,7 +349,7 @@ process.exit(1);
     callsPath,
     env: {
       OPEN_MAINTAINER_FAKE_GH_CALLS: callsPath,
-      PATH: `${directory}:${process.env.PATH ?? ""}`,
+      PATH: `${directory}:${process.env["PATH"] ?? ""}`,
     },
   };
 }

@@ -11,8 +11,9 @@ import { createRepositorySourceLifecycle } from "../src/repository-source-analys
 
 const execFileAsync = promisify(execFile);
 
-const previousRepositoryCache = process.env.OPEN_MAINTAINER_LOCAL_REPO_CACHE;
-const previousMountedRoots = process.env.OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS;
+const previousRepositoryCache = process.env["OPEN_MAINTAINER_LOCAL_REPO_CACHE"];
+const previousMountedRoots =
+  process.env["OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS"];
 
 afterEach(() => {
   restoreEnv("OPEN_MAINTAINER_LOCAL_REPO_CACHE", previousRepositoryCache);
@@ -89,7 +90,7 @@ describe("repository source lifecycle", () => {
   it("normalizes uploaded files and materializes the fallback worktree", async () => {
     const store = new MemoryStore();
     const cacheRoot = await mkdtemp(path.join(tmpdir(), "rsa-cache-"));
-    process.env.OPEN_MAINTAINER_LOCAL_REPO_CACHE = cacheRoot;
+    process.env["OPEN_MAINTAINER_LOCAL_REPO_CACHE"] = cacheRoot;
     const lifecycle = createRepositorySourceLifecycle({ store });
 
     try {
@@ -181,7 +182,7 @@ describe("repository source lifecycle", () => {
         "src/index.ts": "export const mounted = true;\n",
       },
     });
-    process.env.OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS = repoRoot;
+    process.env["OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS"] = repoRoot;
     const lifecycle = createRepositorySourceLifecycle({ store });
 
     try {

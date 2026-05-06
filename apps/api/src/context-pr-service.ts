@@ -556,7 +556,7 @@ async function runGit(
 ): Promise<string> {
   return deps.runCommand({
     tool: "git",
-    command: process.env.OPEN_MAINTAINER_GIT_COMMAND ?? "git",
+    command: process.env["OPEN_MAINTAINER_GIT_COMMAND"] ?? "git",
     args,
     cwd,
     ...(env ? { env } : {}),
@@ -570,7 +570,7 @@ async function runGh(
 ): Promise<string> {
   return deps.runCommand({
     tool: "gh",
-    command: process.env.OPEN_MAINTAINER_GH_COMMAND ?? "gh",
+    command: process.env["OPEN_MAINTAINER_GH_COMMAND"] ?? "gh",
     args,
     cwd,
   });
@@ -606,12 +606,12 @@ async function defaultContextPrCommandRunner(input: {
 
 function gitCommitIdentityEnv(): Record<string, string> {
   const name =
-    process.env.OPEN_MAINTAINER_GIT_AUTHOR_NAME ??
-    process.env.GIT_AUTHOR_NAME ??
+    process.env["OPEN_MAINTAINER_GIT_AUTHOR_NAME"] ??
+    process.env["GIT_AUTHOR_NAME"] ??
     "Open Maintainer";
   const email =
-    process.env.OPEN_MAINTAINER_GIT_AUTHOR_EMAIL ??
-    process.env.GIT_AUTHOR_EMAIL ??
+    process.env["OPEN_MAINTAINER_GIT_AUTHOR_EMAIL"] ??
+    process.env["GIT_AUTHOR_EMAIL"] ??
     "open-maintainer@users.noreply.github.com";
   return {
     GIT_AUTHOR_NAME: name,
@@ -622,7 +622,7 @@ function gitCommitIdentityEnv(): Record<string, string> {
 }
 
 function gitPushAuthEnv(): Record<string, string> | undefined {
-  const token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
+  const token = process.env["GH_TOKEN"] ?? process.env["GITHUB_TOKEN"];
   if (!token) {
     return undefined;
   }

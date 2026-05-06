@@ -13,7 +13,6 @@ import {
   isRepositoryPathIgnored,
   newId,
   nowIso,
-  optionalContextArtifactHints,
   recognizedContextArtifactHints,
   repositoryIgnoreFileNames,
   requiredContextArtifactHints,
@@ -183,7 +182,6 @@ const environmentFilePatterns = [
 ];
 
 const contextArtifactPaths = [...requiredContextArtifactHints];
-const optionalContextArtifactPaths = [...optionalContextArtifactHints];
 const recognizedContextArtifactPaths = [...recognizedContextArtifactHints];
 
 export async function scanRepository(
@@ -739,7 +737,7 @@ export function analyzeRepo(input: AnalyzeRepoInput): RepoProfile {
       if (isQualityOrWorkflowScript(name)) {
         commands.push({
           name,
-          command: commandForSource(packageJson.path, name, command),
+          command: commandForSource(packageJson.path, command),
           source: packageJson.path,
         });
       }
@@ -1511,11 +1509,7 @@ function isQualityOrWorkflowScript(name: string): boolean {
   ].includes(name);
 }
 
-function commandForSource(
-  source: string,
-  name: string,
-  command: string,
-): string {
+function commandForSource(source: string, command: string): string {
   if (source === "package.json") {
     return command;
   }

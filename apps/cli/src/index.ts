@@ -4,8 +4,6 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import {
-  DEFAULT_CODEX_CLI_MODEL,
-  type ModelProvider,
   buildClaudeCliProvider,
   buildCodexCliProvider,
 } from "@open-maintainer/ai";
@@ -379,12 +377,12 @@ const ansi = {
 } as const;
 
 function color(value: string, ...codes: string[]): string {
-  if (process.env.OPEN_MAINTAINER_FORCE_COLOR === "1") {
+  if (process.env["OPEN_MAINTAINER_FORCE_COLOR"] === "1") {
     return `${codes.join("")}${value}${ansi.reset}`;
   }
   if (
-    process.env.NO_COLOR ||
-    process.env.OPEN_MAINTAINER_NO_COLOR === "1" ||
+    process.env["NO_COLOR"] ||
+    process.env["OPEN_MAINTAINER_NO_COLOR"] === "1" ||
     !process.stdout.isTTY
   ) {
     return value;
@@ -1007,8 +1005,8 @@ function createCliContextGenerationModelPort(input: {
   const model =
     input.llmModel ??
     (input.model === "codex"
-      ? process.env.OPEN_MAINTAINER_CODEX_MODEL
-      : process.env.OPEN_MAINTAINER_CLAUDE_MODEL) ??
+      ? process.env["OPEN_MAINTAINER_CODEX_MODEL"]
+      : process.env["OPEN_MAINTAINER_CLAUDE_MODEL"]) ??
     null;
   const providerLabel = input.model === "codex" ? "Codex CLI" : "Claude CLI";
   const label = input.model;
@@ -1586,7 +1584,7 @@ async function cliGitHasStagedChanges(cwd: string): Promise<boolean> {
 
 async function runCliGit(cwd: string, args: string[]): Promise<string> {
   return runCliCommand(
-    process.env.OPEN_MAINTAINER_GIT_COMMAND ?? "git",
+    process.env["OPEN_MAINTAINER_GIT_COMMAND"] ?? "git",
     args,
     cwd,
     gitCommitIdentityEnv(),
@@ -1595,7 +1593,7 @@ async function runCliGit(cwd: string, args: string[]): Promise<string> {
 
 async function runCliGh(cwd: string, args: string[]): Promise<string> {
   return runCliCommand(
-    process.env.OPEN_MAINTAINER_GH_COMMAND ?? "gh",
+    process.env["OPEN_MAINTAINER_GH_COMMAND"] ?? "gh",
     args,
     cwd,
   );
@@ -1636,12 +1634,12 @@ async function runCliCommand(
 
 function gitCommitIdentityEnv(): Record<string, string> {
   const name =
-    process.env.OPEN_MAINTAINER_GIT_AUTHOR_NAME ??
-    process.env.GIT_AUTHOR_NAME ??
+    process.env["OPEN_MAINTAINER_GIT_AUTHOR_NAME"] ??
+    process.env["GIT_AUTHOR_NAME"] ??
     "open-maintainer";
   const email =
-    process.env.OPEN_MAINTAINER_GIT_AUTHOR_EMAIL ??
-    process.env.GIT_AUTHOR_EMAIL ??
+    process.env["OPEN_MAINTAINER_GIT_AUTHOR_EMAIL"] ??
+    process.env["GIT_AUTHOR_EMAIL"] ??
     "open-maintainer@users.noreply.github.com";
   return {
     GIT_AUTHOR_NAME: name,

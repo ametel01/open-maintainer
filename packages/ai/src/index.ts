@@ -346,11 +346,11 @@ function decryptForLocalDev(value: string): string {
 }
 
 function codexCommand(): string {
-  return process.env.OPEN_MAINTAINER_CODEX_COMMAND ?? "codex";
+  return process.env["OPEN_MAINTAINER_CODEX_COMMAND"] ?? "codex";
 }
 
 function claudeCommand(): string {
-  return process.env.OPEN_MAINTAINER_CLAUDE_COMMAND ?? "claude";
+  return process.env["OPEN_MAINTAINER_CLAUDE_COMMAND"] ?? "claude";
 }
 
 function extractClaudeOutput(stdout: string): string {

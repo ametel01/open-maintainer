@@ -122,7 +122,7 @@ export async function persistRepositoryReferenceArtifacts(
 
 function defaultUrlArtifactRoot(): string {
   return path.resolve(
-    process.env.OPEN_MAINTAINER_REMOTE_ARTIFACT_ROOT ??
+    process.env["OPEN_MAINTAINER_REMOTE_ARTIFACT_ROOT"] ??
       path.join(process.cwd(), ".open-maintainer", "url-repos"),
   );
 }
@@ -144,7 +144,7 @@ function normalizeArtifactPath(value: string): string | null {
 }
 
 async function runGit(args: string[]): Promise<string> {
-  const command = process.env.OPEN_MAINTAINER_GIT_COMMAND ?? "git";
+  const command = process.env["OPEN_MAINTAINER_GIT_COMMAND"] ?? "git";
   try {
     const { stdout } = await execFileAsync(command, args, {
       maxBuffer: 10 * 1024 * 1024,

@@ -1077,7 +1077,7 @@ function selectedReviewKnowledge(
     [...selectors].some((value) => pattern.test(value));
   const knowledge: Record<string, string[]> = {};
   if (has(/typescript|javascript|\.tsx?$|\.jsx?$/)) {
-    knowledge.typescript = [
+    knowledge["typescript"] = [
       "Check async functions for missing await, swallowed promise rejection, and incorrect Promise handling.",
       "Check unsafe any, unchecked unknown casts, incorrect optional/null handling, and type assertions that bypass validation.",
       "Check API boundary validation with zod or equivalent when user input enters the system.",
@@ -1086,7 +1086,7 @@ function selectedReviewKnowledge(
     ];
   }
   if (has(/node|bun|package\.json|child_process|process\.env/)) {
-    knowledge.node = [
+    knowledge["node"] = [
       "Check file path handling for traversal risks.",
       "Check child_process usage for command injection.",
       "Check environment variable access and secret logging.",
@@ -1094,18 +1094,18 @@ function selectedReviewKnowledge(
     ];
   }
   if (has(/fastify|apps\/api/)) {
-    knowledge.fastify = [
+    knowledge["fastify"] = [
       "Check route handlers for schema validation, error handling, and reply lifecycle mistakes.",
       "Check auth/permission checks happen before side effects.",
     ];
   }
   if (has(/github|webhook|pull_request|packages\/github|action\.ya?ml/)) {
-    knowledge.githubApps = [
+    knowledge["githubApps"] = [
       "Check webhook signature verification, installation auth, token scope, branch write behavior, and default-branch mutation.",
     ];
   }
   if (has(/docker|docker-compose|dockerfile/)) {
-    knowledge.docker = [
+    knowledge["docker"] = [
       "Check env var exposure, port changes, volume changes, and service dependency changes.",
     ];
   }

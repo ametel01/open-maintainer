@@ -336,7 +336,7 @@ async function localPullRequestMetadata(input: {
 }> {
   const output = await input.runCommand({
     tool: "gh",
-    command: process.env.OPEN_MAINTAINER_GH_COMMAND ?? "gh",
+    command: process.env["OPEN_MAINTAINER_GH_COMMAND"] ?? "gh",
     cwd: input.worktreeRoot,
     args: [
       "pr",

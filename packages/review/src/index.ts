@@ -1635,63 +1635,6 @@ function storedReviewWorkspaceIntent(
   };
 }
 
-async function runReviewOperationRequest(
-  orchestrator: ReviewOrchestrator,
-  request: ReviewOperationRequest,
-): Promise<ReviewRun> {
-  const output = request.output
-    ? reviewOutputIntentForOperation(request.output)
-    : undefined;
-  const publication =
-    request.publish !== undefined
-      ? reviewPublicationIntentForOperation(request.publish)
-      : undefined;
-
-  if (request.source.kind === "local") {
-    return orchestrator.review({
-      repository: { kind: "local", repoRoot: request.source.repoRoot },
-      model: cliModelSelectionForOperation(request.model),
-      ...(request.source.target ? { target: request.source.target } : {}),
-      intent: request.mode,
-      ...(output ? { output } : {}),
-      ...(publication !== undefined ? { publication } : {}),
-      ...(request.persist !== undefined
-        ? { persistence: request.persist }
-        : {}),
-      ...(request.limits ? { limits: request.limits } : {}),
-    });
-  }
-
-  if (request.source.kind === "stored") {
-    return orchestrator.review({
-      repository: { kind: "stored", repoId: request.source.repoId },
-      model: { providerId: storedProviderIdForOperation(request.model) },
-      ...(request.source.target ? { target: request.source.target } : {}),
-      intent: request.mode,
-      ...(output ? { output } : {}),
-      ...(publication !== undefined ? { publication } : {}),
-      ...(request.persist !== undefined
-        ? { persistence: request.persist }
-        : {}),
-      ...(request.limits ? { limits: request.limits } : {}),
-    });
-  }
-
-  return orchestrator.review({
-    repository: {
-      kind: "prepared",
-      profile: request.source.profile,
-      input: request.source.input,
-      ...(request.source.repoRoot ? { repoRoot: request.source.repoRoot } : {}),
-    },
-    model: modelRequestForOperation(request.model),
-    intent: request.mode,
-    ...(output ? { output } : {}),
-    ...(publication !== undefined ? { publication } : {}),
-    ...(request.persist !== undefined ? { persistence: request.persist } : {}),
-  });
-}
-
 function cliModelSelectionForOperation(
   model: ReviewOperationModelRequest,
 ): ReviewModelSelection {
@@ -1703,17 +1646,6 @@ function cliModelSelectionForOperation(
     ...(model.model ? { model: model.model } : {}),
     consent: { repositoryContentTransfer: true },
   };
-}
-
-function storedProviderIdForOperation(
-  model: ReviewOperationModelRequest,
-): string {
-  if (model.kind !== "stored-provider") {
-    throw new Error(
-      "Stored review operations require a stored model provider.",
-    );
-  }
-  return model.providerId;
 }
 
 function modelRequestForOperation(
@@ -1729,18 +1661,6 @@ function modelRequestForOperation(
     return { providerId: model.providerId };
   }
   return cliModelSelectionForOperation(model);
-}
-
-function reviewOutputIntentForOperation(
-  output: ReviewOutputIntent,
-): ReviewOutputIntent | undefined {
-  if (!output.markdownPath) {
-    return undefined;
-  }
-  return {
-    markdownPath: output.markdownPath,
-    ...(output.write ? { write: output.write } : {}),
-  };
 }
 
 function reviewPublicationIntentForOperation(
@@ -3433,35 +3353,6 @@ function renderListOrFallback(items: string[], fallback: string): string {
   return items.length > 0 ? renderList(items) : `- ${fallback}`;
 }
 
-function renderValidation(items: ReviewResult["expectedValidation"]): string {
-  if (items.length === 0) {
-    return "- No expected validation was inferred.";
-  }
-  return items
-    .map((item) =>
-      [
-        `- \`${item.command}\`: ${item.reason}`,
-        renderCitationList(item.evidence, "  "),
-      ].join("\n"),
-    )
-    .join("\n");
-}
-
-function renderDocsImpact(items: ReviewResult["docsImpact"]): string {
-  if (items.length === 0) {
-    return "- No documentation impact was inferred.";
-  }
-  return items
-    .map((item) => {
-      const requirement = item.required ? "required" : "advisory";
-      return [
-        `- \`${item.path}\` (${requirement}): ${item.reason}`,
-        renderCitationList(item.evidence, "  "),
-      ].join("\n");
-    })
-    .join("\n");
-}
-
 function renderContributionTriage(review: ReviewResult): string {
   const triage = review.contributionTriage;
   if (triage.status === "not_evaluated") {
@@ -3879,11 +3770,4 @@ function isConfigOrLockPath(path: string, profile: RepoProfile): boolean {
     path.endsWith("tsconfig.json") ||
     path === "biome.json"
   );
-}
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 }

@@ -141,7 +141,7 @@ export class MemoryStore {
 export const store = new MemoryStore();
 
 export async function checkDatabase(
-  databaseUrl = process.env.DATABASE_URL,
+  databaseUrl = process.env["DATABASE_URL"],
 ): Promise<"ok" | "error"> {
   if (!databaseUrl) {
     return "ok";
@@ -162,7 +162,7 @@ export async function checkDatabase(
 }
 
 export async function checkRedis(
-  redisUrl = process.env.REDIS_URL,
+  redisUrl = process.env["REDIS_URL"],
 ): Promise<"ok" | "error"> {
   if (!redisUrl) {
     return "ok";

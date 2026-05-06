@@ -147,17 +147,17 @@ export function parseOpenMaintainerConfigWithDiagnostics(
     }),
   };
 
-  if (isRecord(root.repo)) {
+  if (isRecord(root["repo"])) {
     warnUnknownKeys(
-      root.repo,
+      root["repo"],
       "repo",
       ["profileVersion", "defaultBranch"],
       diagnostics,
     );
   }
-  if (isRecord(root.generated)) {
+  if (isRecord(root["generated"])) {
     warnUnknownKeys(
-      root.generated,
+      root["generated"],
       "generated",
       ["by", "artifactVersion", "generatedAt"],
       diagnostics,
@@ -172,8 +172,8 @@ export function parseOpenMaintainerConfigWithDiagnostics(
     diagnostics,
   });
   if (issueTriage !== undefined) {
-    configInput.issueTriage = issueTriage;
-    warnIssueTriageUnknownKeys(root.issueTriage, diagnostics);
+    configInput["issueTriage"] = issueTriage;
+    warnIssueTriageUnknownKeys(root["issueTriage"], diagnostics);
   }
 
   const retention = parseOptionalSection({
@@ -184,10 +184,10 @@ export function parseOpenMaintainerConfigWithDiagnostics(
     diagnostics,
   });
   if (retention !== undefined) {
-    configInput.retention = retention;
-    if (isRecord(root.retention)) {
+    configInput["retention"] = retention;
+    if (isRecord(root["retention"])) {
       warnUnknownKeys(
-        root.retention,
+        root["retention"],
         "retention",
         ["localArtifactsMaxAgeDays"],
         diagnostics,
@@ -242,9 +242,9 @@ function warnIssueTriageUnknownKeys(
     ["closure", "labels", "batch", "comments", "mode"],
     diagnostics,
   );
-  if (isRecord(value.closure)) {
+  if (isRecord(value["closure"])) {
     warnUnknownKeys(
-      value.closure,
+      value["closure"],
       "issueTriage.closure",
       [
         "allowPossibleSpam",
@@ -256,9 +256,9 @@ function warnIssueTriageUnknownKeys(
       diagnostics,
     );
   }
-  if (isRecord(value.labels)) {
+  if (isRecord(value["labels"])) {
     warnUnknownKeys(
-      value.labels,
+      value["labels"],
       "issueTriage.labels",
       [
         "preferUpstream",
@@ -269,17 +269,17 @@ function warnIssueTriageUnknownKeys(
       diagnostics,
     );
   }
-  if (isRecord(value.batch)) {
+  if (isRecord(value["batch"])) {
     warnUnknownKeys(
-      value.batch,
+      value["batch"],
       "issueTriage.batch",
       ["defaultState", "includeLabels", "excludeLabels", "maxIssues"],
       diagnostics,
     );
   }
-  if (isRecord(value.comments)) {
+  if (isRecord(value["comments"])) {
     warnUnknownKeys(
-      value.comments,
+      value["comments"],
       "issueTriage.comments",
       ["enabled", "maxOneCommentPerIssue", "updateExistingComment"],
       diagnostics,

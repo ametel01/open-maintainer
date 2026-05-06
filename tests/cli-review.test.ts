@@ -105,7 +105,7 @@ async function createFakeGhCli(input: {
     `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
-const callsPath = process.env.OPEN_MAINTAINER_FAKE_GH_CALLS;
+const callsPath = process.env["OPEN_MAINTAINER_FAKE_GH_CALLS"];
 function write(value) {
   process.stdout.write(JSON.stringify(value));
 }
@@ -169,7 +169,7 @@ process.exit(1);
     callsPath,
     env: {
       OPEN_MAINTAINER_FAKE_GH_CALLS: callsPath,
-      PATH: `${directory}:${process.env.PATH ?? ""}`,
+      PATH: `${directory}:${process.env["PATH"] ?? ""}`,
     },
   };
 }

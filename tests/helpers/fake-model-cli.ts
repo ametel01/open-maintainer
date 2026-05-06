@@ -32,12 +32,12 @@ let promptText = "";
 let output;
 
 if (schema.required.includes("classification")) {
-  if (process.env.OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE === "invalid-json") {
+  if (process.env["OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE"] === "invalid-json") {
     output = "not an issue triage object";
   } else {
-    const noEvidence = process.env.OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE === "no-evidence";
-    const spam = process.env.OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE === "spam";
-    const ready = process.env.OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE === "ready";
+    const noEvidence = process.env["OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE"] === "no-evidence";
+    const spam = process.env["OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE"] === "spam";
+    const ready = process.env["OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE"] === "ready";
     output = {
       classification: spam ? "possibly_spam" : ready ? "ready_for_maintainer_review" : "needs_author_input",
       qualityScore: spam ? 18 : ready ? 91 : 42,
@@ -64,7 +64,7 @@ if (schema.required.includes("classification")) {
     };
   }
 } else if (schema.required.includes("findings")) {
-  const findings = process.env.OPEN_MAINTAINER_FAKE_CODEX_FINDING === "1"
+  const findings = process.env["OPEN_MAINTAINER_FAKE_CODEX_FINDING"] === "1"
     ? [{
         severity: "major",
         category: "correctness",
@@ -153,7 +153,7 @@ process.stdin.on("data", (chunk) => {
 process.stdin.on("end", () => {
   if (
     schema.required.includes("classification") &&
-    process.env.OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE === "mixed"
+    process.env["OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE"] === "mixed"
   ) {
     if (promptText.includes('"issueNumber": 43') || promptText.includes('"number": 43')) {
       output = {
@@ -179,7 +179,7 @@ process.stdin.on("end", () => {
   }
   if (
     schema.required.includes("classification") &&
-    process.env.OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE === "all-classifications"
+    process.env["OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE"] === "all-classifications"
   ) {
     const issueMatch =
       promptText.match(/"issueNumber":\\s*(\\d+)/) ??

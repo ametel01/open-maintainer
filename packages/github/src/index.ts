@@ -18,7 +18,6 @@ import type {
   RepoProfile,
   ReviewChangedFile,
   ReviewCheckStatus,
-  ReviewExistingComment,
   ReviewInput,
   ReviewIssueContext,
   ReviewResult,
@@ -127,12 +126,12 @@ export function gitHubCliEnv(
 ): NodeJS.ProcessEnv {
   const nextEnv = { ...env };
   if (
-    nextEnv.CI !== "true" &&
-    nextEnv.GITHUB_ACTIONS !== "true" &&
-    nextEnv.OPEN_MAINTAINER_USE_ENV_GH_TOKEN !== "1"
+    nextEnv["CI"] !== "true" &&
+    nextEnv["GITHUB_ACTIONS"] !== "true" &&
+    nextEnv["OPEN_MAINTAINER_USE_ENV_GH_TOKEN"] !== "1"
   ) {
-    nextEnv.GH_TOKEN = undefined;
-    nextEnv.GITHUB_TOKEN = undefined;
+    nextEnv["GH_TOKEN"] = undefined;
+    nextEnv["GITHUB_TOKEN"] = undefined;
   }
   return nextEnv;
 }

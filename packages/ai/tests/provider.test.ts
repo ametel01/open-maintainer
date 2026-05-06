@@ -36,8 +36,8 @@ describe("AI providers", () => {
   });
 
   it("checks selected CLI providers before generation", async () => {
-    const previousCodexCommand = process.env.OPEN_MAINTAINER_CODEX_COMMAND;
-    process.env.OPEN_MAINTAINER_CODEX_COMMAND =
+    const previousCodexCommand = process.env["OPEN_MAINTAINER_CODEX_COMMAND"];
+    process.env["OPEN_MAINTAINER_CODEX_COMMAND"] =
       "open-maintainer-missing-codex-test-command";
     try {
       const provider = createProviderConfig({
@@ -56,7 +56,7 @@ describe("AI providers", () => {
       if (previousCodexCommand === undefined) {
         Reflect.deleteProperty(process.env, "OPEN_MAINTAINER_CODEX_COMMAND");
       } else {
-        process.env.OPEN_MAINTAINER_CODEX_COMMAND = previousCodexCommand;
+        process.env["OPEN_MAINTAINER_CODEX_COMMAND"] = previousCodexCommand;
       }
     }
   });
@@ -100,7 +100,7 @@ describe("AI providers", () => {
     const repoRoot = path.join(directory, "repo");
     const command = path.join(directory, "fake-codex.js");
     const argsPath = path.join(directory, "args.json");
-    const previousCodexCommand = process.env.OPEN_MAINTAINER_CODEX_COMMAND;
+    const previousCodexCommand = process.env["OPEN_MAINTAINER_CODEX_COMMAND"];
     try {
       await writeFile(
         command,
@@ -114,7 +114,7 @@ fs.writeFileSync(outputPath, JSON.stringify({ ok: true }));
 `,
       );
       await chmod(command, 0o755);
-      process.env.OPEN_MAINTAINER_CODEX_COMMAND = command;
+      process.env["OPEN_MAINTAINER_CODEX_COMMAND"] = command;
       const provider = createProviderConfig({
         kind: "codex-cli",
         displayName: "Codex CLI",
@@ -168,7 +168,7 @@ fs.writeFileSync(outputPath, JSON.stringify({ ok: true }));
       if (previousCodexCommand === undefined) {
         Reflect.deleteProperty(process.env, "OPEN_MAINTAINER_CODEX_COMMAND");
       } else {
-        process.env.OPEN_MAINTAINER_CODEX_COMMAND = previousCodexCommand;
+        process.env["OPEN_MAINTAINER_CODEX_COMMAND"] = previousCodexCommand;
       }
     }
   });

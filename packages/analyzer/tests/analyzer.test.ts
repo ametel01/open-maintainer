@@ -59,7 +59,7 @@ describe("analyzeRepo", () => {
         },
         {
           path: "src/auth.ts",
-          content: "export const auth = process.env.DATABASE_URL;",
+          content: 'export const auth = process.env["DATABASE_URL"];',
         },
         {
           path: "scripts/deploy.sh",
@@ -159,7 +159,7 @@ describe("analyzeRepo", () => {
         },
         {
           path: "src/auth.ts",
-          content: "export const token = process.env.GH_TOKEN;",
+          content: 'export const token = process.env["GH_TOKEN"];',
         },
       ],
       identity: {

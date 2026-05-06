@@ -2097,7 +2097,7 @@ function skillSlugFromPath(path: string): string | null {
   return (
     /^\.(?:agents|claude)\/skills\/(?<slug>[a-z0-9][a-z0-9-]*)\/SKILL\.md$/.exec(
       path,
-    )?.groups?.slug ?? null
+    )?.groups?.["slug"] ?? null
   );
 }
 

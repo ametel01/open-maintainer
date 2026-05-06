@@ -31,14 +31,12 @@ import {
 import type {
   PullRequestReviewRun,
   ReviewInlineCommentPlan,
-  ReviewInlineCommentResult,
   ReviewOperationDeps,
   ReviewPromptContext,
   ReviewPublicationInput,
   ReviewPublicationPlan,
   ReviewPublicationResult,
   ReviewPullRequestMetadata,
-  ReviewSummaryCommentResult,
   ReviewTriageLabelPlan,
   ReviewTriageLabelResult,
 } from "@open-maintainer/review";
@@ -778,7 +776,7 @@ function buildReviewProvider(input: {
   const createdAt = new Date(0).toISOString();
   const codexModel =
     input.model ??
-    process.env.OPEN_MAINTAINER_CODEX_MODEL ??
+    process.env["OPEN_MAINTAINER_CODEX_MODEL"] ??
     DEFAULT_CODEX_CLI_MODEL;
   const providerConfig: ModelProviderConfig =
     input.provider === "codex"

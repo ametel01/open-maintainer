@@ -11,7 +11,6 @@ import {
   type GitHubRepositoryClient,
   createGitHubCliApi,
   createGitHubIssueTriageEvidencePort,
-  execGitHubCli,
 } from "@open-maintainer/github";
 import type {
   IssueTriageEvidence,
@@ -577,7 +576,7 @@ function buildIssueTriageProvider(input: {
   const createdAt = new Date(0).toISOString();
   const codexModel =
     input.model.model ??
-    process.env.OPEN_MAINTAINER_CODEX_MODEL ??
+    process.env["OPEN_MAINTAINER_CODEX_MODEL"] ??
     DEFAULT_CODEX_CLI_MODEL;
   const providerConfig: ModelProviderConfig =
     input.model.provider === "codex"
@@ -972,10 +971,6 @@ async function ghApiNoBody(
   method: "DELETE",
 ): Promise<void> {
   await createGitHubCliApi({ repoRoot }).noBody(endpoint, method);
-}
-
-async function execGh(repoRoot: string, args: string[]): Promise<string> {
-  return execGitHubCli(repoRoot, args);
 }
 
 async function readOptionalRepoFile(
