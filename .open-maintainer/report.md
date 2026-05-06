@@ -353,8 +353,8 @@ Agent Readiness: 100/100
 
 ## Drift
 
-- Documentation: docs/DEMO_RUNBOOK.md was changed. Evidence: docs/DEMO_RUNBOOK.md. Next action: review generated context against the changed docs.
-- Documentation: README.md was changed. Evidence: README.md. Next action: review generated context against the changed docs.
+- Lockfiles and config: biome.json was changed. Evidence: biome.json. Next action: review setup and validation context for the changed file.
+- Lockfiles and config: tsconfig.base.json was changed. Evidence: tsconfig.base.json. Next action: review setup and validation context for the changed file.
 
 ## Commands
 

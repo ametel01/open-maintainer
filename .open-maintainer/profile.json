@@ -1,11 +1,13 @@
 {
-  "id": "repo_profile_42614ab4-ffef-4deb-add9-a976d7c4e7e6",
+  "id": "repo_profile_432ffb5a-cab4-4e2a-bf13-9bb2e5ad8189",
   "repoId": "local",
   "version": 1,
   "owner": "Open-Maintainer",
   "name": "open-maintainer",
   "defaultBranch": "main",
-  "primaryLanguages": ["TypeScript"],
+  "primaryLanguages": [
+    "TypeScript"
+  ],
   "frameworks": [
     "next",
     "react",
@@ -263,66 +265,36 @@
   "detectedRiskAreas": [
     "Authentication, secret, payment, or security-sensitive paths are present."
   ],
-  "riskHintPaths": ["SECURITY.md"],
+  "riskHintPaths": [
+    "apps/api/src/auth-readiness.ts",
+    "SECURITY.md"
+  ],
   "ownershipHints": [],
   "environmentFiles": [
     ".env.example",
     "tests/fixtures/high-readiness-ts/.env.example"
   ],
   "environmentVariables": [
-    "API_BASE_URL",
-    "API_PORT",
     "APP_ENV",
     "AUDIT_EXIT_CODE",
     "AUDIT_OUTPUT_PATH",
     "BASE_READINESS_SCORE",
-    "DATABASE_URL",
     "DOCTOR_EXIT_CODE",
     "DOCTOR_OUTPUT_PATH",
     "DRIFT_DETECTED",
     "EVENT_NAME",
     "GH_TOKEN",
-    "GITHUB_APP_ID",
-    "GITHUB_PRIVATE_KEY_BASE64",
-    "GITHUB_TOKEN",
-    "GITHUB_WEBHOOK_SECRET",
-    "GIT_AUTHOR_EMAIL",
-    "GIT_AUTHOR_NAME",
     "HOME",
     "MODE",
-    "NEXT_PUBLIC_API_BASE_URL",
-    "NO_COLOR",
-    "OPEN_MAINTAINER_CLAUDE_COMMAND",
     "OPEN_MAINTAINER_CLAUDE_MODEL",
-    "OPEN_MAINTAINER_CODEX_COMMAND",
     "OPEN_MAINTAINER_CODEX_MODEL",
-    "OPEN_MAINTAINER_DASHBOARD_REPO_ROOT",
-    "OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS",
-    "OPEN_MAINTAINER_FAKE_CODEX_FINDING",
-    "OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE",
-    "OPEN_MAINTAINER_FAKE_EXISTING_TRIAGE_COMMENT",
-    "OPEN_MAINTAINER_FAKE_GH_CALLS",
-    "OPEN_MAINTAINER_FAKE_GH_COMMENT_FAIL",
-    "OPEN_MAINTAINER_FAKE_GH_LABELLED_FIRST_PAGE",
-    "OPEN_MAINTAINER_FAKE_GH_LABEL_APPLY_FAIL",
-    "OPEN_MAINTAINER_FAKE_GH_REJECT_ENV_TOKEN",
-    "OPEN_MAINTAINER_FAKE_ISSUE_42_UPDATED_AT",
-    "OPEN_MAINTAINER_FORCE_COLOR",
-    "OPEN_MAINTAINER_GH_COMMAND",
     "OPEN_MAINTAINER_GIT_AUTHOR_EMAIL",
     "OPEN_MAINTAINER_GIT_AUTHOR_NAME",
-    "OPEN_MAINTAINER_GIT_COMMAND",
-    "OPEN_MAINTAINER_LOCAL_REPO_CACHE",
-    "OPEN_MAINTAINER_NO_COLOR",
-    "OPEN_MAINTAINER_REMOTE_ARTIFACT_ROOT",
     "OPEN_MAINTAINER_REVIEW_SUMMARY_MARKER",
-    "PATH",
     "READINESS_SCORE",
-    "REDIS_URL",
     "REPORT_PATH",
     "RUNNER_TEMP",
     "SUMMARY_PATH",
-    "WEB_BASE_URL",
     "WEB_PORT"
   ],
   "ignoreFiles": [
@@ -992,7 +964,9 @@
       "reason": "detected repository context"
     }
   ],
-  "workspaceManifests": ["package.json"],
+  "workspaceManifests": [
+    "package.json"
+  ],
   "lockfiles": [
     "bun.lock",
     "tests/fixtures/high-readiness-ts/bun.lock",
@@ -1060,7 +1034,7 @@
     },
     {
       "path": ".env.example",
-      "hash": "5f7ec9dd3fff65a0"
+      "hash": "1dac7d2d5151446e"
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -1092,11 +1066,11 @@
     },
     {
       "path": ".open-maintainer/profile.json",
-      "hash": "4bb4cfef4b725dcb"
+      "hash": "44c8fe677e366b7f"
     },
     {
       "path": ".open-maintainer/report.md",
-      "hash": "0828bbdef95fe2d4"
+      "hash": "d0db38047e16c64d"
     },
     {
       "path": "AGENTS.md",
@@ -1107,8 +1081,12 @@
       "hash": "f8da895aa54e4af1"
     },
     {
+      "path": "apps/api/src/auth-readiness.ts",
+      "hash": "6583b3d22af3b178"
+    },
+    {
       "path": "apps/api/tests/api.test.ts",
-      "hash": "0726598a421313fb"
+      "hash": "816da5c12f34d966"
     },
     {
       "path": "apps/api/tests/context-pr-service.test.ts",
@@ -1116,7 +1094,7 @@
     },
     {
       "path": "apps/api/tests/repository-source-analysis.test.ts",
-      "hash": "96d9bd7f8755642e"
+      "hash": "840a1cb1a9d8c433"
     },
     {
       "path": "apps/api/tests/review-service.test.ts",
@@ -1156,7 +1134,7 @@
     },
     {
       "path": "biome.json",
-      "hash": "24e4be3556c6b021"
+      "hash": "a4e48510a8ff6a65"
     },
     {
       "path": "bun.lock",
@@ -1168,11 +1146,11 @@
     },
     {
       "path": "docker-compose.yml",
-      "hash": "5bf9553af5b56282"
+      "hash": "c881b47002842a3e"
     },
     {
       "path": "docs/DEMO_RUNBOOK.md",
-      "hash": "86044fd6804ef7f7"
+      "hash": "a2da56571870bf71"
     },
     {
       "path": "docs/MVP_RELEASE_REVIEW.md",
@@ -1196,7 +1174,7 @@
     },
     {
       "path": "packages/ai/tests/provider.test.ts",
-      "hash": "7b85219491fb0bf0"
+      "hash": "39b758fc8b96be60"
     },
     {
       "path": "packages/ai/tsconfig.json",
@@ -1208,7 +1186,7 @@
     },
     {
       "path": "packages/analyzer/tests/analyzer.test.ts",
-      "hash": "f9f2cff0eac4f70d"
+      "hash": "65e879f60a186102"
     },
     {
       "path": "packages/analyzer/tsconfig.json",
@@ -1328,7 +1306,7 @@
     },
     {
       "path": "README.md",
-      "hash": "b95c298e240419ab"
+      "hash": "714905e6e6e03ee8"
     },
     {
       "path": "SECURITY.md",
@@ -1360,15 +1338,15 @@
     },
     {
       "path": "tests/cli-review.test.ts",
-      "hash": "a3ce3a439a93d0c4"
+      "hash": "aedfa910a4faf6ed"
     },
     {
       "path": "tests/cli-triage.test.ts",
-      "hash": "748ccaabd2fa9483"
+      "hash": "fe88565852f9751a"
     },
     {
       "path": "tests/dashboard-contracts.test.ts",
-      "hash": "50d4e1b7e71da8f1"
+      "hash": "7006671f19e4ae0d"
     },
     {
       "path": "tests/fixtures/high-readiness-ts/.agents/skills/high-readiness-ts-pr-review/SKILL.md",
@@ -1424,11 +1402,11 @@
     },
     {
       "path": "tests/fixtures/high-readiness-ts/src/index.ts",
-      "hash": "1e2a69b28a1542f4"
+      "hash": "5d9ee7afbc09fdfd"
     },
     {
       "path": "tests/fixtures/high-readiness-ts/tests/index.test.ts",
-      "hash": "ee18b35d2d379706"
+      "hash": "e83093492e3dc6bb"
     },
     {
       "path": "tests/fixtures/high-readiness-ts/tsconfig.json",
@@ -1516,7 +1494,7 @@
     },
     {
       "path": "tests/helpers/fake-model-cli.ts",
-      "hash": "aa19aecdaa260578"
+      "hash": "21a97bc9ac380c80"
     },
     {
       "path": "tests/helpers/git-url.ts",
@@ -1532,11 +1510,11 @@
     },
     {
       "path": "tests/smoke/compose-smoke.ts",
-      "hash": "bc4e3d9622d61107"
+      "hash": "12732f3a3b9464db"
     },
     {
       "path": "tests/smoke/local-health.ts",
-      "hash": "3f677a0334030daf"
+      "hash": "1a04c41878be79ec"
     },
     {
       "path": "tests/smoke/mvp-demo.ts",
@@ -1556,7 +1534,7 @@
     },
     {
       "path": "tsconfig.base.json",
-      "hash": "f66eed3af4423122"
+      "hash": "69011e78266488a4"
     },
     {
       "path": "tsconfig.json",
@@ -1564,7 +1542,7 @@
     }
   ],
   "contextArtifactHashes": [],
-  "createdAt": "2026-05-05T23:11:37.127Z",
+  "createdAt": "2026-05-06T00:53:49.230Z",
   "agentReadiness": {
     "score": 100,
     "categories": [
@@ -2894,7 +2872,7 @@
       }
     ],
     "missingItems": [],
-    "generatedAt": "2026-05-05T23:11:37.127Z"
+    "generatedAt": "2026-05-06T00:53:49.231Z"
   },
-  "openMaintainerProfileHash": "f75b5bd3259f9a6a"
+  "openMaintainerProfileHash": "9b10118094becae9"
 }
