@@ -351,12 +351,6 @@ Agent Readiness: 100/100
 - Evidence: .open-maintainer/report.md (detected repository context)
 - Evidence: AGENTS.md (detected repository context)
 
-## Drift
-
-- Documentation: README.md was changed. Evidence: README.md. Next action: review generated context against the changed docs.
-- Lockfiles and config: docker-compose.yml was changed. Evidence: docker-compose.yml. Next action: review setup and validation context for the changed file.
-- Risk paths: apps/api/src/auth-readiness.ts was changed. Evidence: apps/api/src/auth-readiness.ts. Next action: inspect the changed risk path and update high-risk guidance if needed.
-
 ## Commands
 
 - dev: cd apps/api && bun --watch src/server.ts (apps/api/package.json)

@@ -1,5 +1,5 @@
 {
-  "id": "repo_profile_17402e95-c5fc-4e06-a5a7-6a3162e1f481",
+  "id": "repo_profile_59420641-1d62-44a0-a867-b8bc1dc2a3a3",
   "repoId": "local",
   "version": 1,
   "owner": "Open-Maintainer",
@@ -1102,11 +1102,11 @@
     },
     {
       "path": ".open-maintainer/profile.json",
-      "hash": "aeefe21e9fe96a2c"
+      "hash": "186fc7b4f5055764"
     },
     {
       "path": ".open-maintainer/report.md",
-      "hash": "1fd1b2d4b271176b"
+      "hash": "f5855f4ebaa0d8fb"
     },
     {
       "path": "AGENTS.md",
@@ -1382,7 +1382,7 @@
     },
     {
       "path": "tests/dashboard-contracts.test.ts",
-      "hash": "2e800b58bb14de91"
+      "hash": "f24ac919ababb12d"
     },
     {
       "path": "tests/fixtures/high-readiness-ts/.agents/skills/high-readiness-ts-pr-review/SKILL.md",
@@ -1578,7 +1578,7 @@
     }
   ],
   "contextArtifactHashes": [],
-  "createdAt": "2026-05-07T05:36:24.111Z",
+  "createdAt": "2026-05-07T06:00:27.168Z",
   "agentReadiness": {
     "score": 100,
     "categories": [
@@ -2908,7 +2908,7 @@
       }
     ],
     "missingItems": [],
-    "generatedAt": "2026-05-07T05:36:24.111Z"
+    "generatedAt": "2026-05-07T06:00:27.169Z"
   },
-  "openMaintainerProfileHash": "7834102aea052af0"
+  "openMaintainerProfileHash": "192b0b15af923e9f"
 }
