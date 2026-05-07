@@ -30,10 +30,10 @@ export async function POST(request: NextRequest) {
 
   const params: Record<string, string> = {};
   if (repoId) {
-    params.repo = repoId;
+    params["repo"] = repoId;
   }
   if (actionError) {
-    params.actionError = actionError;
+    params["actionError"] = actionError;
   }
   return redirectToDashboard(request, params);
 }

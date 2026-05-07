@@ -4,7 +4,6 @@ import type {
   Repo,
   RepoProfile,
   ReviewCheckStatus,
-  ReviewContributionTriageCategory,
   ReviewEvidenceCitation,
   ReviewExistingComment,
   ReviewFinding,
@@ -38,6 +37,10 @@ export type {
   LoadReviewPromptContextInput,
   ReviewPromptContextSource,
 } from "./prompt-context";
+export {
+  reviewTriageLabelDefinitions,
+  reviewTriageLabelNames,
+} from "@open-maintainer/shared";
 
 const severityOrder: ReviewSeverity[] = ["blocker", "major", "minor", "note"];
 
@@ -917,41 +920,6 @@ export type RequiredReviewPublishOptions = {
         createMissingLabels: boolean;
       };
 };
-
-export const reviewTriageLabelDefinitions: Record<
-  ReviewContributionTriageCategory,
-  { name: string; color: string; description: string }
-> = {
-  ready_for_review: {
-    name: "open-maintainer/ready-for-review",
-    color: "2da44e",
-    description: "Open Maintainer: PR appears ready for human review.",
-  },
-  needs_author_input: {
-    name: "open-maintainer/needs-author-input",
-    color: "d29922",
-    description: "Open Maintainer: PR needs author information before review.",
-  },
-  needs_maintainer_design: {
-    name: "open-maintainer/needs-maintainer-design",
-    color: "8250df",
-    description: "Open Maintainer: PR needs maintainer design judgment.",
-  },
-  not_agent_ready: {
-    name: "open-maintainer/not-agent-ready",
-    color: "bf8700",
-    description: "Open Maintainer: PR is not ready for agent-assisted review.",
-  },
-  possible_spam: {
-    name: "open-maintainer/possible-spam",
-    color: "cf222e",
-    description: "Open Maintainer: PR may be spam-like contribution noise.",
-  },
-};
-
-export const reviewTriageLabelNames = new Set(
-  Object.values(reviewTriageLabelDefinitions).map((label) => label.name),
-);
 
 const defaultReviewContentLimits: ReviewContentLimits = {
   maxFiles: 800,

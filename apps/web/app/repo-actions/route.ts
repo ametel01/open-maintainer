@@ -45,13 +45,13 @@ export async function POST(request: NextRequest) {
 
   const params: Record<string, string> = {};
   if (repoId) {
-    params.repo = repoId;
+    params["repo"] = repoId;
   }
   if (providerId) {
-    params.providerId = providerId;
+    params["providerId"] = providerId;
   }
   if (actionError) {
-    params.actionError = actionError;
+    params["actionError"] = actionError;
   }
   return redirectToDashboard(request, params);
 }

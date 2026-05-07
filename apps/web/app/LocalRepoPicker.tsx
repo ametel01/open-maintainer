@@ -26,6 +26,7 @@ export function LocalRepoPicker({ error }: { error?: string | undefined }) {
       const rootName = rootDirectoryName(selected);
       const ignoreRules = await readRootIgnoreRules(selected, rootName);
       const uploaded: RepositoryUploadFile[] = [];
+      let uploadedBytes = 0;
       for (const file of selected) {
         if (uploaded.length >= repositoryUploadLimits.maxFiles) {
           break;
@@ -40,6 +41,10 @@ export function LocalRepoPicker({ error }: { error?: string | undefined }) {
         ) {
           continue;
         }
+        if (uploadedBytes + file.size > repositoryUploadLimits.maxTotalBytes) {
+          continue;
+        }
+        uploadedBytes += file.size;
         uploaded.push({
           path: repoPath,
           content: await file.text(),
@@ -50,13 +55,14 @@ export function LocalRepoPicker({ error }: { error?: string | undefined }) {
         return;
       }
 
+      const uploadBody = JSON.stringify({ name: rootName, files: uploaded });
       const response = await fetch("/local-repos/upload", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: rootName, files: uploaded }),
+        body: uploadBody,
       });
       if (!response.ok) {
-        setStatus("Could not import the selected repository.");
+        setStatus(uploadFailureMessage(response.status));
         return;
       }
       const payload = (await response.json()) as { repo?: { id?: unknown } };
@@ -101,6 +107,16 @@ export function LocalRepoPicker({ error }: { error?: string | undefined }) {
       ) : null}
     </div>
   );
+}
+
+function uploadFailureMessage(status: number): string {
+  if (status === 413) {
+    return "Selected repository is too large for browser upload. In Docker Compose, add the mounted repo path /app instead.";
+  }
+  if (status === 422) {
+    return "Selected repository exceeded the dashboard upload limits.";
+  }
+  return "Could not import the selected repository.";
 }
 
 const directoryInputAttributes = {

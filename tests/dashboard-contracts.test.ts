@@ -3,6 +3,7 @@ import type {
   Health,
   Repo,
   RepoProfile,
+  ReviewResult,
   RunRecord,
 } from "@open-maintainer/shared";
 import {
@@ -19,7 +20,13 @@ import {
   repoActionRequiresProvider,
   repoActionType,
 } from "../apps/web/app/dashboard-contracts";
+import {
+  contextDashboardHref,
+  pullRequestsDashboardHref,
+} from "../apps/web/app/dashboard-navigation";
 import { loadDashboardViewModel } from "../apps/web/app/dashboard-view-model";
+import { triageDraftMarkdown } from "../apps/web/app/pull-requests/draft-markdown";
+import { loadPullRequestsViewModel } from "../apps/web/app/pull-requests/pr-view-model";
 
 describe("dashboard repository upload contracts", () => {
   it("shares upload limits and path filters across browser and API payloads", () => {
@@ -33,6 +40,24 @@ describe("dashboard repository upload contracts", () => {
         files: [{ path: "src/index.ts", content: "export {};\n" }],
       }).success,
     ).toBe(true);
+    expect(
+      RepositoryUploadRequestSchema.safeParse({
+        name: "large-tool",
+        files: Array.from(
+          {
+            length:
+              Math.ceil(
+                repositoryUploadLimits.maxTotalBytes /
+                  repositoryUploadLimits.maxFileBytes,
+              ) + 1,
+          },
+          (_, index) => ({
+            path: `src/file-${index}.ts`,
+            content: "x".repeat(repositoryUploadLimits.maxFileBytes),
+          }),
+        ),
+      }).success,
+    ).toBe(false);
     expect(
       shouldAlwaysSkipRepositoryUploadPath("node_modules/pkg/index.js"),
     ).toBe(true);
@@ -72,6 +97,74 @@ describe("dashboard action contracts", () => {
       expect.objectContaining({ kind: "codex-cli" }),
     );
     expect(providerPreset("nope")).toBeNull();
+  });
+});
+
+describe("dashboard navigation contracts", () => {
+  it("preserves selected repo and provider across Context and Pull Requests", () => {
+    expect(
+      contextDashboardHref({
+        providerId: "model_provider_1",
+        repoId: "local/local tool",
+      }),
+    ).toBe("/?repo=local%2Flocal+tool&providerId=model_provider_1");
+    expect(
+      pullRequestsDashboardHref({
+        providerId: "model_provider_1",
+        repoId: "local/local tool",
+      }),
+    ).toBe(
+      "/pull-requests?repo=local%2Flocal+tool&providerId=model_provider_1",
+    );
+    expect(contextDashboardHref({ providerId: null, repoId: null })).toBe("/");
+    expect(pullRequestsDashboardHref({ providerId: null, repoId: null })).toBe(
+      "/pull-requests",
+    );
+  });
+});
+
+describe("pull request draft markdown", () => {
+  it("renders PR triage as a maintainer-facing recommendation", () => {
+    const markdown = triageDraftMarkdown(
+      reviewResultFixture({
+        contributionTriage: {
+          status: "evaluated",
+          category: "ready_for_review",
+          recommendation: "Proceed with normal human review.",
+          evidence: [
+            {
+              source: "pull_request_metadata",
+              path: null,
+              excerpt: "PR is open and mergeable.",
+              reason: "PR state supports review.",
+            },
+          ],
+          missingInformation: ["No executed validation output was supplied."],
+          requiredActions: [
+            "Confirm CI or run a lightweight validation check before merge.",
+          ],
+        },
+      }),
+    );
+
+    expect(markdown).toContain("Lane: Ready for human review");
+    expect(markdown).toContain("Review now: Yes");
+    expect(markdown).toContain("Ask author: No");
+    expect(markdown).toContain("Label: `open-maintainer/ready-for-review`");
+    expect(markdown).toContain(
+      "- Replace any existing `open-maintainer/*` triage label with `open-maintainer/ready-for-review`.",
+    );
+    expect(markdown).toContain("- Review the PR normally.");
+    expect(markdown).toContain(
+      "- Validation evidence: No executed validation output was supplied.",
+    );
+    expect(markdown).toContain(
+      "- Before merge: Confirm CI or run a lightweight validation check before merge.",
+    );
+    expect(markdown).not.toContain("Queue:");
+    expect(markdown).not.toContain("GitHub Label Actions");
+    expect(markdown).not.toContain("### Missing Information");
+    expect(markdown).not.toContain("Maintainer action:");
   });
 });
 
@@ -172,6 +265,143 @@ describe("dashboard view model", () => {
   });
 });
 
+describe("pull request dashboard view model", () => {
+  it("loads PR list, selected detail, reviews, and consented provider state", async () => {
+    const repo = repoFixture();
+    const requests: string[] = [];
+    const api = createDashboardApiClient({
+      baseUrl: "http://api.test",
+      async fetch(input) {
+        const url = String(input);
+        requests.push(url.replace("http://api.test", ""));
+        if (url.endsWith("/health")) {
+          return Response.json({ status: "ok", api: "ok" });
+        }
+        if (url.endsWith("/auth/ready")) {
+          return Response.json({
+            ghAuth: {
+              status: "ok",
+              error: null,
+              checkedAt: "2026-05-04T00:00:00.000Z",
+            },
+            codexAuth: {
+              status: "ok",
+              error: null,
+              checkedAt: "2026-05-04T00:00:00.000Z",
+            },
+            claudeAuth: {
+              status: "ok",
+              error: null,
+              checkedAt: "2026-05-04T00:00:00.000Z",
+            },
+            authReady: true,
+            checkedAt: "2026-05-04T00:00:00.000Z",
+          } satisfies AuthReadiness);
+        }
+        if (url.endsWith("/repos")) {
+          return Response.json({ repos: [repo] });
+        }
+        if (url.endsWith("/model-providers")) {
+          return Response.json({
+            providers: [
+              {
+                id: "provider_1",
+                kind: "codex-cli",
+                displayName: "Codex CLI",
+                baseUrl: "http://localhost",
+                model: "gpt-5.5",
+                repoContentConsent: true,
+                createdAt: "2026-05-04T00:00:00.000Z",
+                updatedAt: "2026-05-04T00:00:00.000Z",
+              },
+            ],
+          });
+        }
+        if (url.includes(`/repos/${repo.id}/pulls?`)) {
+          return Response.json({
+            source: "local-gh",
+            pullRequests: [pullRequestListItemFixture()],
+          });
+        }
+        if (url.endsWith(`/repos/${repo.id}/pulls/52`)) {
+          return Response.json({
+            source: "local-gh",
+            pullRequest: pullRequestDetailFixture(),
+          });
+        }
+        if (url.endsWith(`/repos/${repo.id}/reviews`)) {
+          return Response.json({
+            reviews: [
+              {
+                id: "review_1",
+                repoId: repo.id,
+                prNumber: 52,
+                baseRef: "main",
+                headRef: "feature",
+                baseSha: null,
+                headSha: null,
+                summary: "Review summary.",
+                walkthrough: ["web"],
+                changedSurface: ["web"],
+                riskAnalysis: [],
+                expectedValidation: [],
+                validationEvidence: [],
+                docsImpact: [],
+                contributionTriage: {
+                  status: "not_evaluated",
+                  category: null,
+                  recommendation: "Contribution triage was not evaluated.",
+                  evidence: [],
+                  missingInformation: [],
+                  requiredActions: [],
+                },
+                findings: [],
+                mergeReadiness: {
+                  status: "ready",
+                  reason: "No blockers.",
+                  evidence: [],
+                },
+                residualRisk: [],
+                changedFiles: [],
+                feedback: [],
+                modelProvider: "Codex CLI",
+                model: "gpt-5.5",
+                createdAt: "2026-05-04T00:00:00.000Z",
+              },
+            ],
+          });
+        }
+        return Response.json({}, { status: 404 });
+      },
+    });
+
+    const view = await loadPullRequestsViewModel({
+      api,
+      searchParams: {
+        repo: repo.id,
+        pr: "52",
+        tab: "files",
+        providerId: "provider_1",
+        batchTriage: "1",
+        selectedPr: "52",
+      },
+    });
+
+    expect(requests).toContain(
+      `/repos/${repo.id}/pulls?state=open&sort=updated&direction=desc`,
+    );
+    expect(requests).toContain(`/repos/${repo.id}/pulls/52`);
+    expect(view.repo?.id).toBe(repo.id);
+    expect(view.selectedPullNumber).toBe(52);
+    expect(view.selectedPullRequest?.summary.title).toBe("Add PR dashboard");
+    expect(view.filters.tab).toBe("files");
+    expect(view.filters.batchTriage).toBe(true);
+    expect(view.filters.selectedPrs).toEqual([52]);
+    expect(view.selectedProvider?.id).toBe("provider_1");
+    expect(view.selectedReview?.id).toBe("review_1");
+  });
+});
+
 function repoFixture(): Repo {
   return {
     id: "repo_1",
@@ -243,5 +473,140 @@ function runFixture(repoId: string): RunRecord {
     externalId: "https://github.com/acme/tool/pull/42",
     createdAt: "2026-05-04T00:00:00.000Z",
     updatedAt: "2026-05-04T00:00:00.000Z",
+  };
+}
+
+function reviewResultFixture(input: {
+  contributionTriage: ReviewResult["contributionTriage"];
+}): ReviewResult {
+  return {
+    id: "review_1",
+    repoId: "repo_1",
+    prNumber: 52,
+    baseRef: "main",
+    headRef: "feature",
+    baseSha: null,
+    headSha: null,
+    summary: "Review summary.",
+    walkthrough: ["web"],
+    changedSurface: ["web"],
+    riskAnalysis: [],
+    expectedValidation: [],
+    validationEvidence: [],
+    docsImpact: [],
+    contributionTriage: input.contributionTriage,
+    findings: [],
+    mergeReadiness: {
+      status: "ready",
+      reason: "No blockers.",
+      evidence: [],
+    },
+    residualRisk: [],
+    changedFiles: [],
+    feedback: [],
+    modelProvider: "Codex CLI",
+    model: "gpt-5.5",
+    createdAt: "2026-05-04T00:00:00.000Z",
+  };
+}
+
+function pullRequestListItemFixture() {
+  return {
+    number: 52,
+    title: "Add PR dashboard",
+    bodyPreview: "Fast queue.",
+    url: "https://github.com/acme/tool/pull/52",
+    author: "maintainer",
+    state: "open",
+    isDraft: false,
+    labels: ["dashboard"],
+    reviewers: ["reviewer"],
+    assignees: [],
+    baseRef: "main",
+    headRef: "feature",
+    headSha: "head",
+    createdAt: "2026-05-04T00:00:00.000Z",
+    updatedAt: "2026-05-04T00:01:00.000Z",
+    comments: 1,
+    reviewComments: 0,
+    commits: 1,
+    changedFiles: 1,
+    additions: 4,
+    deletions: 2,
+    reviewDecision: "REVIEW_REQUIRED",
+    mergeable: "MERGEABLE",
+    mergeStateStatus: "CLEAN",
+    checksSummary: {
+      total: 1,
+      passing: 1,
+      failing: 0,
+      pending: 0,
+      skipped: 0,
+    },
+    attention: "review_required",
+    unread: false,
+    triageTags: [
+      {
+        id: "llm_authored",
+        githubLabel: "open-maintainer/llm-authored",
+        label: "LLM-authored",
+        description:
+          "Open Maintainer detected an AI or agent authorship signal on this PR.",
+      },
+    ],
+  };
+}
+
+function pullRequestDetailFixture() {
+  return {
+    summary: pullRequestListItemFixture(),
+    body: "Fast queue.",
+    baseSha: "base",
+    headSha: "head",
+    mergeable: "MERGEABLE",
+    mergeStateStatus: "CLEAN",
+    reviewDecision: "REVIEW_REQUIRED",
+    files: [
+      {
+        path: "apps/web/app/page.tsx",
+        status: "modified",
+        additions: 4,
+        deletions: 2,
+        patch: "@@ -1 +1 @@\n-old\n+new",
+        previousPath: null,
+      },
+    ],
+    skippedFiles: [],
+    commits: [
+      {
+        sha: "commit-sha",
+        message: "Add PR dashboard",
+        author: "maintainer",
+        authoredAt: "2026-05-04T00:00:30.000Z",
+        url: null,
+      },
+    ],
+    timeline: [
+      {
+        id: "opened-52",
+        kind: "opened",
+        author: "maintainer",
+        body: "Fast queue.",
+        state: null,
+        path: null,
+        line: null,
+        url: "https://github.com/acme/tool/pull/52",
+        createdAt: "2026-05-04T00:00:00.000Z",
+        updatedAt: "2026-05-04T00:01:00.000Z",
+      },
+    ],
+    checks: [
+      {
+        name: "build",
+        status: "completed",
+        conclusion: "success",
+        url: null,
+      },
+    ],
   };
 }

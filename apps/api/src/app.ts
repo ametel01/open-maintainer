@@ -25,6 +25,7 @@ import {
   ReviewFeedbackSchema,
   newId,
   nowIso,
+  repositoryUploadLimits,
 } from "@open-maintainer/shared";
 import Fastify from "fastify";
 import { z } from "zod";
@@ -34,6 +35,7 @@ import {
   strictStartupAuthEnabled,
 } from "./auth-readiness";
 import { createDashboardContextPrService } from "./context-pr-service";
+import { createDashboardPullRequestService } from "./pull-request-service";
 import { createRepositorySourceLifecycle } from "./repository-source-analysis";
 import { createDashboardReviewService } from "./review-service";
 
@@ -43,10 +45,15 @@ const sensitiveRouteRateLimit = {
 } as const;
 
 export function buildApp(input: { authReadiness?: AuthReadinessChecker } = {}) {
-  const app = Fastify({ logger: false });
+  const app = Fastify({
+    logger: false,
+    pluginTimeout: 45_000,
+    bodyLimit: repositoryUploadLimits.maxRequestBodyBytes,
+  });
   const checkAuthReadiness =
     input.authReadiness ?? createAuthReadinessChecker();
   let startupAuthReadiness: AuthReadiness | null = null;
+  let startupAuthReadinessPromise: Promise<AuthReadiness> | null = null;
   const repositorySources = createRepositorySourceLifecycle({
     store,
     getInstallationAuth: githubAuthForInstallation,
@@ -54,6 +61,10 @@ export function buildApp(input: { authReadiness?: AuthReadinessChecker } = {}) {
   const contextPrService = createDashboardContextPrService({
     store,
     repositorySources,
+    getInstallationAuth: githubAuthForInstallation,
+  });
+  const pullRequestService = createDashboardPullRequestService({
+    store,
     getInstallationAuth: githubAuthForInstallation,
   });
   const reviewService = createDashboardReviewService({
@@ -65,15 +76,17 @@ export function buildApp(input: { authReadiness?: AuthReadinessChecker } = {}) {
   app.register(formBody);
 
   app.addHook("onReady", async () => {
+    if (
+      !strictStartupAuthEnabled(
+        process.env["OPEN_MAINTAINER_STRICT_STARTUP_AUTH"],
+      )
+    ) {
+      void loadStartupAuthReadiness().catch(() => undefined);
+      return;
+    }
+
     const readiness = await loadStartupAuthReadiness();
     if (!readiness.authReady) {
-      if (
-        !strictStartupAuthEnabled(
-          process.env["OPEN_MAINTAINER_STRICT_STARTUP_AUTH"],
-        )
-      ) {
-        return;
-      }
       throw new Error(
         [
           "Strict startup auth readiness failed.",
@@ -88,10 +101,20 @@ export function buildApp(input: { authReadiness?: AuthReadinessChecker } = {}) {
   });
 
   async function loadStartupAuthReadiness(): Promise<AuthReadiness> {
-    startupAuthReadiness ??= AuthReadinessSchema.parse(
-      await checkAuthReadiness(),
-    );
-    return startupAuthReadiness;
+    if (startupAuthReadiness) {
+      return startupAuthReadiness;
+    }
+    startupAuthReadinessPromise ??= checkAuthReadiness()
+      .then((readiness) => AuthReadinessSchema.parse(readiness))
+      .then((readiness) => {
+        startupAuthReadiness = readiness;
+        return readiness;
+      })
+      .catch((error) => {
+        startupAuthReadinessPromise = null;
+        throw error;
+      });
+    return startupAuthReadinessPromise;
   }
 
   app.get("/health", async () => {
@@ -463,6 +486,72 @@ export function buildApp(input: { authReadiness?: AuthReadinessChecker } = {}) {
   app.get("/repos/:repoId/reviews", async (request) => {
     const { repoId } = z.object({ repoId: z.string() }).parse(request.params);
     return { reviews: store.listReviews(repoId) };
+  });
+
+  app.get("/repos/:repoId/pulls", async (request, reply) => {
+    const { repoId } = z.object({ repoId: z.string() }).parse(request.params);
+    const query = z
+      .object({
+        state: z.enum(["open", "closed", "all"]).optional(),
+        search: z.string().trim().max(200).optional(),
+        sort: z.enum(["updated", "created", "number"]).optional(),
+        direction: z.enum(["asc", "desc"]).optional(),
+      })
+      .parse(request.query ?? {});
+    const result = await pullRequestService.list({
+      repoId,
+      ...(query.state ? { state: query.state } : {}),
+      ...(query.search ? { search: query.search } : {}),
+      ...(query.sort ? { sort: query.sort } : {}),
+      ...(query.direction ? { direction: query.direction } : {}),
+    });
+    if (!result.ok) {
+      return reply.code(result.statusCode).send({ error: result.error });
+    }
+    return result.value;
+  });
+
+  app.register(async (limitedRoutes) => {
+    await limitedRoutes.register(rateLimit, { global: false });
+
+    limitedRoutes.post(
+      "/repos/:repoId/pulls/triage",
+      { config: { rateLimit: sensitiveRouteRateLimit } },
+      async (request, reply) => {
+        const { repoId } = z
+          .object({ repoId: z.string() })
+          .parse(request.params);
+        const body = z
+          .object({
+            providerId: z.string().optional(),
+            pullNumbers: z.array(z.number().int().positive()).min(1).max(25),
+          })
+          .parse(request.body ?? {});
+        const result = await pullRequestService.triage({
+          repoId,
+          pullNumbers: body.pullNumbers,
+          ...(body.providerId ? { providerId: body.providerId } : {}),
+        });
+        if (!result.ok) {
+          return reply.code(result.statusCode).send({ error: result.error });
+        }
+        return result.value;
+      },
+    );
+  });
+
+  app.get("/repos/:repoId/pulls/:pullNumber", async (request, reply) => {
+    const { repoId, pullNumber } = z
+      .object({
+        repoId: z.string(),
+        pullNumber: z.coerce.number().int().positive(),
+      })
+      .parse(request.params);
+    const result = await pullRequestService.detail({ repoId, pullNumber });
+    if (!result.ok) {
+      return reply.code(result.statusCode).send({ error: result.error });
+    }
+    return result.value;
   });
 
   app.get("/reviews/:reviewId", async (request, reply) => {

@@ -67,14 +67,14 @@ export async function loadDashboardViewModel(input: {
 }): Promise<DashboardViewModel> {
   const api = input.api ?? dashboardApi;
   const requestedRepo = singleParam(
-    input.searchParams.repo ?? input.searchParams.repoId,
+    input.searchParams["repo"] ?? input.searchParams["repoId"],
   );
   const repoQuery =
-    singleParam(input.searchParams.q)?.trim().toLowerCase() ?? "";
-  const requestedProviderId = singleParam(input.searchParams.providerId);
-  const localRepoError = singleParam(input.searchParams.localRepoError);
-  const actionError = singleParam(input.searchParams.actionError);
-  const providerError = singleParam(input.searchParams.providerError);
+    singleParam(input.searchParams["q"])?.trim().toLowerCase() ?? "";
+  const requestedProviderId = singleParam(input.searchParams["providerId"]);
+  const localRepoError = singleParam(input.searchParams["localRepoError"]);
+  const actionError = singleParam(input.searchParams["actionError"]);
+  const providerError = singleParam(input.searchParams["providerError"]);
 
   const [health, authReadiness, reposResponse, providersResponse] =
     await Promise.all([

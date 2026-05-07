@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
   const params: Record<string, string> = {};
   if (repoId) {
-    params.repo = repoId;
+    params["repo"] = repoId;
   }
   if (providerId) {
     return redirectToDashboard(request, { ...params, providerId });
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
     }
     const payload = response.payload;
     if (typeof payload.provider?.id === "string") {
-      params.providerId = payload.provider.id;
+      params["providerId"] = payload.provider.id;
     }
   } catch {
     return redirectToDashboard(request, {

@@ -54,6 +54,24 @@ describe("dashboard API client", () => {
     });
   });
 
+  it("returns structured GET failures when pages need permission states", async () => {
+    const client = createDashboardApiClient({
+      baseUrl: "http://api.test",
+      async fetch() {
+        return Response.json(
+          { error: "Pull request data requires GitHub App credentials." },
+          { status: 409 },
+        );
+      },
+    });
+
+    await expect(client.getJson("/repos/repo_1/pulls")).resolves.toEqual({
+      ok: false,
+      status: 409,
+      actionError: "409:Pull request data requires GitHub App credentials.",
+    });
+  });
+
   it("returns unreachable when the owned API cannot be reached", async () => {
     const client = createDashboardApiClient({
       baseUrl: "http://api.test",

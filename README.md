@@ -269,6 +269,12 @@ docker compose up --build
 
 Open the dashboard at `http://localhost:3000`. The API listens on `http://localhost:4000`.
 
+The dashboard includes a dedicated Pull Requests route at `http://localhost:3000/pull-requests`. Select an installed GitHub repository or local worktree to inspect PRs, switch quickly between PRs, view conversation, files, and commits tabs, generate editable LLM review drafts, and run batch LLM triage that applies supported `open-maintainer/*` labels to selected PRs. Pull request data is read through GitHub App credentials when available, or through `gh` for registered local Git worktrees.
+
+LLM draft generation and batch PR triage on the Pull Requests route use the same repository-content consent gate as dashboard review previews. Generated review output remains editable in the browser and does not post comments or reviews. Batch PR triage is an explicit GitHub write action: the configured model selects supported Open Maintainer labels, then the API creates missing labels and applies them through GitHub App credentials or `gh`.
+
+When running the dashboard through Docker Compose, import this checkout with the mounted repo path `/app`. Browser uploads are intended for smaller unmounted repositories and are capped at 800 readable files, 128 KB per file, and 8 MB of selected file content.
+
 Run stack checks after services are up:
 
 ```sh
@@ -276,19 +282,19 @@ bun run diagnostics
 bun run smoke:compose
 ```
 
-The API exposes launch-time auth readiness at `GET /auth/ready` and supports strict startup mode through `OPEN_MAINTAINER_STRICT_STARTUP_AUTH=true`. By default, strict mode is off: the API starts, web and worker wait for API health, and `/auth/ready` reports `authReady: false` with per-tool error details when auth is missing. In strict mode, API startup fails until all required CLI auth checks pass (`gh`, `codex`, and `claude`).
+The API exposes auth readiness at `GET /auth/ready` and supports strict startup mode through `OPEN_MAINTAINER_STRICT_STARTUP_AUTH=true`. By default, strict mode is off: the API starts, web and worker wait for API health, and `/auth/ready` reports `authReady: false` with per-tool error details when required auth is missing. Model CLI checks are provider-aware: `OPEN_MAINTAINER_REQUIRED_MODEL_CLI_AUTH` defaults to `codex`, accepts `claude`, `codex,claude`, or `none`, and reports unused CLIs as `skipped`. In strict mode, API startup fails until `gh` and the configured model CLI checks pass.
 
-For real dashboard GitHub writes (`Open PR with gh`), use a token with minimum fine-grained repository permissions:
+For real dashboard GitHub writes (`Open PR with gh`, batch PR triage labels), use a token with minimum fine-grained repository permissions:
 
 - `Contents`: Read and write.
 - `Pull requests`: Read and write.
-- Optional: `Issues`: Read and write when using summary/issue comment posting surfaces.
+- Optional: `Issues`: Read and write when applying labels or using summary/issue comment posting surfaces.
 
 If your organization enforces SSO, authorize the token for that org.
 
-For OAuth-backed LLM CLIs, authenticate on the host and keep the mounted auth directories available to the API container:
+For OAuth-backed LLM CLIs, authenticate the CLI selected by `OPEN_MAINTAINER_REQUIRED_MODEL_CLI_AUTH` on the host and keep the mounted auth directories available to the API container:
 
-- `codex login` and `claude login` on the host.
+- `codex login` for Codex CLI and `claude login` for Claude CLI on the host.
 - Compose mounts `${HOME}/.codex`, `${HOME}/.claude`, and `${HOME}/.config` into the API container.
 
 If OAuth sessions expire, re-authenticate on the host and recreate the API container:

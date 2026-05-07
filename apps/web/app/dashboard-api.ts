@@ -9,6 +9,10 @@ export type DashboardApiActionResult<T> =
 
 export type DashboardApiClient = {
   url(path: string): string;
+  getJson<T>(
+    path: string,
+    init?: RequestInit,
+  ): Promise<DashboardApiActionResult<T>>;
   fetchJson<T>(path: string, init?: RequestInit): Promise<T | null>;
   postJson<T>(
     path: string,
@@ -41,6 +45,14 @@ export function createDashboardApiClient(
     path: string,
     init?: RequestInit,
   ): Promise<T | null> {
+    const result = await getJson<T>(path, init);
+    return result.ok ? result.payload : null;
+  }
+
+  async function getJson<T>(
+    path: string,
+    init?: RequestInit,
+  ): Promise<DashboardApiActionResult<T>> {
     try {
       const response = await apiFetch(url(path), {
         ...init,
@@ -51,11 +63,19 @@ export function createDashboardApiClient(
         },
       });
       if (!response.ok) {
-        return null;
+        return {
+          ok: false,
+          status: response.status,
+          actionError: await dashboardActionError(response),
+        };
       }
-      return (await response.json()) as T;
+      return {
+        ok: true,
+        status: response.status,
+        payload: (await response.json()) as T,
+      };
     } catch {
-      return null;
+      return { ok: false, status: null, actionError: "unreachable" };
     }
   }
 
@@ -86,7 +106,7 @@ export function createDashboardApiClient(
     }
   }
 
-  return { url, fetchJson, postJson };
+  return { url, getJson, fetchJson, postJson };
 }
 
 export const dashboardApi = createDashboardApiClient();

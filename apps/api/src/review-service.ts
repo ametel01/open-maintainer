@@ -17,7 +17,10 @@ import {
   loadReviewPromptContext,
   reviewOperationTargetFromShortcut,
 } from "@open-maintainer/review";
-import type { ReviewOperationDeps } from "@open-maintainer/review";
+import type {
+  ReviewOperationDeps,
+  ReviewPullRequestMetadata,
+} from "@open-maintainer/review";
 import type {
   ModelProviderConfig,
   Repo,
@@ -322,18 +325,7 @@ async function localPullRequestMetadata(input: {
   worktreeRoot: string;
   prNumber: number;
   runCommand: DashboardReviewCommandRunner;
-}): Promise<{
-  number: number;
-  baseRef: string;
-  title: string | null;
-  body: string;
-  url: string | null;
-  author: string | null;
-  isDraft: boolean | null;
-  mergeable: string | null;
-  mergeStateStatus: string | null;
-  reviewDecision: string | null;
-}> {
+}): Promise<ReviewPullRequestMetadata> {
   const output = await input.runCommand({
     tool: "gh",
     command: process.env["OPEN_MAINTAINER_GH_COMMAND"] ?? "gh",
@@ -343,12 +335,14 @@ async function localPullRequestMetadata(input: {
       "view",
       String(input.prNumber),
       "--json",
-      "baseRefName,title,body,url,author,isDraft,mergeable,mergeStateStatus,reviewDecision",
+      "baseRefName,headRefName,headRefOid,title,body,url,author,isDraft,mergeable,mergeStateStatus,reviewDecision",
     ],
   });
   const parsed = z
     .object({
       baseRefName: z.string().min(1),
+      headRefName: z.string().nullable().optional(),
+      headRefOid: z.string().nullable().optional(),
       title: z.string().nullable().optional(),
       body: z.string().nullable().optional(),
       url: z.string().url().nullable().optional(),
@@ -362,6 +356,8 @@ async function localPullRequestMetadata(input: {
   return {
     number: input.prNumber,
     baseRef: parsed.baseRefName,
+    ...(parsed.headRefName ? { headRef: parsed.headRefName } : {}),
+    ...(parsed.headRefOid ? { headSha: parsed.headRefOid } : {}),
     title: parsed.title ?? null,
     body: parsed.body ?? "",
     url: parsed.url ?? null,

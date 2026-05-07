@@ -491,6 +491,8 @@ function normalizeRepositoryPath(repoPath: string): string {
 export const repositoryUploadLimits = {
   maxFiles: 800,
   maxFileBytes: 128_000,
+  maxTotalBytes: 8_000_000,
+  maxRequestBodyBytes: 10_485_760,
   maxPathLength: 1_000,
   maxNameLength: 120,
 } as const;
@@ -556,13 +558,31 @@ export const RepositoryUploadFileSchema = z.object({
 });
 export type RepositoryUploadFile = z.infer<typeof RepositoryUploadFileSchema>;
 
-export const RepositoryUploadRequestSchema = z.object({
-  name: z.string().min(1).max(repositoryUploadLimits.maxNameLength).optional(),
-  files: z
-    .array(RepositoryUploadFileSchema)
-    .min(1)
-    .max(repositoryUploadLimits.maxFiles),
-});
+export const RepositoryUploadRequestSchema = z
+  .object({
+    name: z
+      .string()
+      .min(1)
+      .max(repositoryUploadLimits.maxNameLength)
+      .optional(),
+    files: z
+      .array(RepositoryUploadFileSchema)
+      .min(1)
+      .max(repositoryUploadLimits.maxFiles),
+  })
+  .superRefine((request, context) => {
+    const totalBytes = request.files.reduce(
+      (sum, file) => sum + file.content.length,
+      0,
+    );
+    if (totalBytes > repositoryUploadLimits.maxTotalBytes) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["files"],
+        message: "Repository upload payload is too large.",
+      });
+    }
+  });
 export type RepositoryUploadRequest = z.infer<
   typeof RepositoryUploadRequestSchema
 >;
@@ -803,6 +823,41 @@ export type ReviewContributionTriageCategory = z.infer<
   typeof ReviewContributionTriageCategorySchema
 >;
 
+export const reviewTriageLabelDefinitions: Record<
+  ReviewContributionTriageCategory,
+  { name: string; color: string; description: string }
+> = {
+  ready_for_review: {
+    name: "open-maintainer/ready-for-review",
+    color: "2da44e",
+    description: "Open Maintainer: PR appears ready for human review.",
+  },
+  needs_author_input: {
+    name: "open-maintainer/needs-author-input",
+    color: "d29922",
+    description: "Open Maintainer: PR needs author information before review.",
+  },
+  needs_maintainer_design: {
+    name: "open-maintainer/needs-maintainer-design",
+    color: "8250df",
+    description: "Open Maintainer: PR needs maintainer design judgment.",
+  },
+  not_agent_ready: {
+    name: "open-maintainer/not-agent-ready",
+    color: "bf8700",
+    description: "Open Maintainer: PR is not ready for agent-assisted review.",
+  },
+  possible_spam: {
+    name: "open-maintainer/possible-spam",
+    color: "cf222e",
+    description: "Open Maintainer: PR may be spam-like contribution noise.",
+  },
+};
+
+export const reviewTriageLabelNames = new Set(
+  Object.values(reviewTriageLabelDefinitions).map((label) => label.name),
+);
+
 export const ReviewContributionTriageSchema = z
   .object({
     status: z.enum(["evaluated", "not_evaluated"]),
@@ -919,6 +974,202 @@ export const ReviewInputSchema = z.object({
   createdAt: z.string(),
 });
 export type ReviewInput = z.infer<typeof ReviewInputSchema>;
+
+export const PullRequestAttentionSchema = z.enum([
+  "none",
+  "draft",
+  "checks_failed",
+  "changes_requested",
+  "review_required",
+  "conflicts",
+]);
+export type PullRequestAttention = z.infer<typeof PullRequestAttentionSchema>;
+
+export const PullRequestCheckSummarySchema = z.object({
+  total: z.number().int().min(0),
+  passing: z.number().int().min(0),
+  failing: z.number().int().min(0),
+  pending: z.number().int().min(0),
+  skipped: z.number().int().min(0),
+});
+export type PullRequestCheckSummary = z.infer<
+  typeof PullRequestCheckSummarySchema
+>;
+
+export const PullRequestTriageTagIdSchema = z.enum([
+  "llm_authored",
+  "generated_context",
+]);
+export type PullRequestTriageTagId = z.infer<
+  typeof PullRequestTriageTagIdSchema
+>;
+
+export const PullRequestTriageTagSchema = z.object({
+  id: PullRequestTriageTagIdSchema,
+  githubLabel: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().min(1),
+});
+export type PullRequestTriageTag = z.infer<typeof PullRequestTriageTagSchema>;
+
+export const PullRequestListItemSchema = z.object({
+  number: z.number().int().positive(),
+  title: z.string().min(1),
+  bodyPreview: z.string(),
+  url: z.string().url().nullable(),
+  author: z.string().nullable(),
+  state: z.enum(["open", "closed", "merged"]),
+  isDraft: z.boolean().nullable(),
+  labels: z.array(z.string().min(1)),
+  reviewers: z.array(z.string().min(1)),
+  assignees: z.array(z.string().min(1)),
+  baseRef: z.string().min(1),
+  headRef: z.string().min(1),
+  headSha: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+  comments: z.number().int().min(0),
+  reviewComments: z.number().int().min(0),
+  commits: z.number().int().min(0),
+  changedFiles: z.number().int().min(0),
+  additions: z.number().int().min(0),
+  deletions: z.number().int().min(0),
+  reviewDecision: z.string().nullable(),
+  mergeable: z.string().nullable(),
+  mergeStateStatus: z.string().nullable(),
+  checksSummary: PullRequestCheckSummarySchema,
+  attention: PullRequestAttentionSchema,
+  unread: z.boolean(),
+  triageTags: z.array(PullRequestTriageTagSchema).default([]),
+});
+export type PullRequestListItem = z.infer<typeof PullRequestListItemSchema>;
+
+export function inferPullRequestTriageTags(input: {
+  author?: string | null;
+  body?: string | null;
+  files?: Array<{ path: string }> | null;
+  headRef?: string | null;
+  labels?: readonly string[];
+  title?: string | null;
+}): PullRequestTriageTag[] {
+  const labels = input.labels ?? [];
+  const text = [
+    input.author,
+    input.title,
+    input.body,
+    input.headRef,
+    labels.join(" "),
+  ]
+    .filter((item): item is string => Boolean(item))
+    .join("\n")
+    .toLowerCase();
+  const generatedContext =
+    isOpenMaintainerContextText(text) ||
+    (input.files ?? []).some((file) =>
+      isOpenMaintainerContextArtifactPath(file.path),
+    );
+  const llmAuthored = generatedContext || hasLlmAuthorshipSignal(text);
+  const tags: PullRequestTriageTag[] = [];
+  if (llmAuthored) {
+    tags.push({
+      id: "llm_authored",
+      githubLabel: "open-maintainer/llm-authored",
+      label: "LLM-authored",
+      description:
+        "Open Maintainer detected an AI or agent authorship signal on this PR.",
+    });
+  }
+  if (generatedContext) {
+    tags.push({
+      id: "generated_context",
+      githubLabel: "open-maintainer/context-update",
+      label: "Context update",
+      description:
+        "This PR appears to update generated repository context artifacts.",
+    });
+  }
+  return tags;
+}
+
+function hasLlmAuthorshipSignal(text: string): boolean {
+  return [
+    /\bllm\b/,
+    /\bai[- ]generated\b/,
+    /\bagent[- ]generated\b/,
+    /\bcodex\b/,
+    /\bclaude\b/,
+    /\bcopilot\b/,
+    /\bcursor\b/,
+    /\bdevin\b/,
+    /\bsweep\b/,
+    /\baider\b/,
+    /\bopenhands\b/,
+    /\bopenai\b/,
+    /\bgpt[-_ ]?\d*\b/,
+    /generated by (openai|codex|claude|cursor|copilot)/,
+    /co-authored-by:.*(codex|claude|copilot|cursor|openai)/,
+  ].some((pattern) => pattern.test(text));
+}
+
+function isOpenMaintainerContextText(text: string): boolean {
+  return (
+    text.includes("open maintainer context update") ||
+    text.includes("open maintainer context refresh") ||
+    text.includes("generated open maintainer context artifacts") ||
+    text.includes("open-maintainer/context-")
+  );
+}
+
+function isOpenMaintainerContextArtifactPath(path: string): boolean {
+  return (
+    path === "AGENTS.md" ||
+    path === "CLAUDE.md" ||
+    path === ".open-maintainer.yml" ||
+    path.startsWith(".agents/skills/") ||
+    path.startsWith(".claude/skills/")
+  );
+}
+
+export const PullRequestCommitSchema = z.object({
+  sha: z.string().min(1),
+  message: z.string().nullable(),
+  author: z.string().nullable(),
+  authoredAt: z.string().nullable(),
+  url: z.string().url().nullable(),
+});
+export type PullRequestCommit = z.infer<typeof PullRequestCommitSchema>;
+
+export const PullRequestTimelineItemSchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(["opened", "comment", "review", "review_comment"]),
+  author: z.string().nullable(),
+  body: z.string(),
+  state: z.string().nullable(),
+  path: z.string().nullable(),
+  line: z.number().int().positive().nullable(),
+  url: z.string().url().nullable(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+});
+export type PullRequestTimelineItem = z.infer<
+  typeof PullRequestTimelineItemSchema
+>;
+
+export const PullRequestDetailSchema = z.object({
+  summary: PullRequestListItemSchema,
+  body: z.string(),
+  baseSha: z.string().nullable(),
+  headSha: z.string().nullable(),
+  mergeable: z.string().nullable(),
+  mergeStateStatus: z.string().nullable(),
+  reviewDecision: z.string().nullable(),
+  files: z.array(ReviewChangedFileSchema),
+  skippedFiles: z.array(ReviewSkippedFileSchema),
+  commits: z.array(PullRequestCommitSchema),
+  timeline: z.array(PullRequestTimelineItemSchema),
+  checks: z.array(ReviewCheckStatusSchema),
+});
+export type PullRequestDetail = z.infer<typeof PullRequestDetailSchema>;
 
 export const IssueTriageClassificationSchema = z.enum([
   "ready_for_maintainer_review",
@@ -1323,7 +1574,7 @@ export const HealthSchema = z.object({
 export type Health = z.infer<typeof HealthSchema>;
 
 export const AuthToolStatusSchema = z.object({
-  status: z.enum(["ok", "missing"]),
+  status: z.enum(["ok", "missing", "skipped"]),
   error: z.string().nullable(),
   checkedAt: z.string(),
 });

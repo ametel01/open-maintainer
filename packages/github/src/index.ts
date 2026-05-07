@@ -14,6 +14,10 @@ import type {
   IssueTriageIssueMetadata,
   IssueTriageRelatedIssue,
   IssueTriageSkippedEvidence,
+  PullRequestCommit,
+  PullRequestDetail,
+  PullRequestListItem,
+  PullRequestTimelineItem,
   Repo,
   RepoProfile,
   ReviewChangedFile,
@@ -27,6 +31,9 @@ import type {
   WritableContextArtifact,
 } from "@open-maintainer/shared";
 import {
+  PullRequestDetailSchema,
+  PullRequestListItemSchema,
+  inferPullRequestTriageTags,
   isOpenMaintainerGeneratedContent,
   newId,
   nowIso,
@@ -176,11 +183,30 @@ type GitHubPullRequestData = {
   body: string | null;
   html_url: string;
   user?: { login?: string } | null;
+  state?: string | null;
+  merged_at?: string | null;
   draft?: boolean | null;
   mergeable?: boolean | null;
   mergeable_state?: string | null;
+  requested_reviewers?: Array<{ login?: string | null }> | null;
+  requested_teams?: Array<{ name?: string | null }> | null;
+  assignees?: Array<{ login?: string | null }> | null;
+  labels?: Array<string | { name?: string | null }> | null;
+  review_comments?: number | null;
+  comments?: number | null;
+  commits?: number | null;
+  additions?: number | null;
+  deletions?: number | null;
+  changed_files?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
   base: { ref: string; sha: string };
   head: { ref: string; sha: string };
+};
+
+type GitHubPullRequestListData = Partial<GitHubPullRequestData> & {
+  number: number;
+  html_url?: string | null;
 };
 
 type GitHubPullRequestFile = {
@@ -194,6 +220,21 @@ type GitHubPullRequestFile = {
 
 type GitHubPullRequestCommit = {
   sha: string;
+  html_url?: string | null;
+  commit?: {
+    message?: string | null;
+    author?: { name?: string | null; date?: string | null } | null;
+  };
+  author?: { login?: string | null } | null;
+};
+
+type GitHubPullRequestReview = {
+  id: number;
+  body?: string | null;
+  state?: string | null;
+  html_url?: string | null;
+  user?: { login?: string | null } | null;
+  submitted_at?: string | null;
 };
 
 type GitHubIssueComment = {
@@ -308,10 +349,14 @@ export type GitHubRepositoryClient = {
     list(input: {
       owner: string;
       repo: string;
-      state: "open";
-      head: string;
-      base: string;
-    }): Promise<{ data: Array<{ number: number; html_url: string }> }>;
+      state?: "open" | "closed" | "all";
+      head?: string;
+      base?: string;
+      sort?: "created" | "updated" | "popularity" | "long-running";
+      direction?: "asc" | "desc";
+      per_page?: number;
+      page?: number;
+    }): Promise<{ data: GitHubPullRequestListData[] }>;
     create(input: {
       owner: string;
       repo: string;
@@ -348,6 +393,13 @@ export type GitHubRepositoryClient = {
       per_page?: number;
       page?: number;
     }): Promise<{ data: GitHubReviewComment[] }>;
+    listReviews?(input: {
+      owner: string;
+      repo: string;
+      pull_number: number;
+      per_page?: number;
+      page?: number;
+    }): Promise<{ data: GitHubPullRequestReview[] }>;
     createReview?(input: {
       owner: string;
       repo: string;
@@ -387,6 +439,19 @@ export type GitHubRepositoryClient = {
       comment_id: number;
       body: string;
     }): Promise<{ data: { id: number; html_url?: string | null } }>;
+    createLabel?(input: {
+      owner: string;
+      repo: string;
+      name: string;
+      color: string;
+      description?: string;
+    }): Promise<unknown>;
+    addLabels?(input: {
+      owner: string;
+      repo: string;
+      issue_number: number;
+      labels: string[];
+    }): Promise<unknown>;
   };
   search?: {
     issuesAndPullRequests?(input: {
@@ -833,6 +898,207 @@ export async function fetchPullRequestReviewContext(input: {
   };
 }
 
+export async function listPullRequestsForDashboard(input: {
+  owner: string;
+  repo: string;
+  state?: "open" | "closed" | "all";
+  search?: string;
+  sort?: "created" | "updated" | "number";
+  direction?: "asc" | "desc";
+  client?: GitHubRepositoryClient;
+  auth?: GitHubAppInstallationAuth;
+}): Promise<PullRequestListItem[]> {
+  const client = resolveGitHubClient(input);
+  const pullRequests = await listPaginated((page) =>
+    client.pulls.list({
+      owner: input.owner,
+      repo: input.repo,
+      state: input.state ?? "open",
+      sort: input.sort === "number" ? "updated" : (input.sort ?? "updated"),
+      direction: input.direction ?? "desc",
+      per_page: 100,
+      page,
+    }),
+  );
+  return sortPullRequests(
+    filterPullRequests(
+      pullRequests.map((pullRequest) =>
+        mapPullRequestListItem(pullRequest, {
+          checks: [],
+          changedFiles: null,
+        }),
+      ),
+      input.search ?? "",
+    ),
+    input.sort ?? "updated",
+    input.direction ?? "desc",
+  );
+}
+
+export async function fetchPullRequestDetailForDashboard(input: {
+  repoId: string;
+  owner: string;
+  repo: string;
+  pullNumber: number;
+  limits?: Partial<RepositoryContentLimits>;
+  client?: GitHubRepositoryClient;
+  auth?: GitHubAppInstallationAuth;
+}): Promise<PullRequestDetail> {
+  const client = resolveGitHubClient(input);
+  if (!client.pulls.get || !client.pulls.listFiles) {
+    throw new Error("GitHub pull request read APIs are unavailable.");
+  }
+  const pull = (
+    await client.pulls.get({
+      owner: input.owner,
+      repo: input.repo,
+      pull_number: input.pullNumber,
+    })
+  ).data;
+  const limits = {
+    ...DEFAULT_REPOSITORY_CONTENT_LIMITS,
+    ...input.limits,
+  };
+  const listFiles = client.pulls.listFiles;
+  const files = await listPaginated((page) =>
+    listFiles({
+      owner: input.owner,
+      repo: input.repo,
+      pull_number: input.pullNumber,
+      per_page: 100,
+      page,
+    }),
+  );
+  const { changedFiles, skippedFiles } = boundedReviewFiles(files, limits);
+  const listCommits = client.pulls.listCommits;
+  const commits = listCommits
+    ? mapPullRequestCommits(
+        await listPaginated((page) =>
+          listCommits({
+            owner: input.owner,
+            repo: input.repo,
+            pull_number: input.pullNumber,
+            per_page: 100,
+            page,
+          }),
+        ),
+      )
+    : [];
+  const listIssueComments = client.issues?.listComments;
+  const issueComments = listIssueComments
+    ? await listPaginated((page) =>
+        listIssueComments({
+          owner: input.owner,
+          repo: input.repo,
+          issue_number: input.pullNumber,
+          per_page: 100,
+          page,
+        }),
+      )
+    : [];
+  const listReviewComments = client.pulls.listReviewComments;
+  const reviewComments = listReviewComments
+    ? await listPaginated((page) =>
+        listReviewComments({
+          owner: input.owner,
+          repo: input.repo,
+          pull_number: input.pullNumber,
+          per_page: 100,
+          page,
+        }),
+      )
+    : [];
+  const listReviews = client.pulls.listReviews;
+  const reviews = listReviews
+    ? await listPaginated((page) =>
+        listReviews({
+          owner: input.owner,
+          repo: input.repo,
+          pull_number: input.pullNumber,
+          per_page: 100,
+          page,
+        }),
+      )
+    : [];
+  const checks = await fetchCheckStatuses({
+    owner: input.owner,
+    repo: input.repo,
+    ref: pull.head.sha,
+    client,
+  });
+  const detail = {
+    summary: mapPullRequestListItem(pull, {
+      checks,
+      changedFiles,
+    }),
+    body: pull.body ?? "",
+    baseSha: pull.base.sha,
+    headSha: pull.head.sha,
+    mergeable: mapMergeable(pull.mergeable),
+    mergeStateStatus: pull.mergeable_state ?? null,
+    reviewDecision: null,
+    files: changedFiles,
+    skippedFiles,
+    commits,
+    timeline: pullRequestTimeline({
+      pull,
+      issueComments,
+      reviewComments,
+      reviews,
+    }),
+    checks,
+  } satisfies PullRequestDetail;
+  return PullRequestDetailSchema.parse(detail);
+}
+
+export async function applyPullRequestLabelsForDashboard(input: {
+  owner: string;
+  repo: string;
+  pullNumber: number;
+  labels: Array<{
+    name: string;
+    color: string;
+    description: string;
+  }>;
+  client?: GitHubRepositoryClient;
+  auth?: GitHubAppInstallationAuth;
+}): Promise<string[]> {
+  const client = resolveGitHubClient(input);
+  const createLabel = client.issues?.createLabel;
+  const addLabels = client.issues?.addLabels;
+  if (!createLabel || !addLabels) {
+    throw new Error("GitHub label write APIs are unavailable.");
+  }
+
+  for (const label of input.labels) {
+    try {
+      await createLabel({
+        owner: input.owner,
+        repo: input.repo,
+        name: label.name,
+        color: label.color,
+        description: label.description,
+      });
+    } catch (error) {
+      if (!isAlreadyExistsGitHubError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  const labelNames = input.labels.map((label) => label.name);
+  if (labelNames.length === 0) {
+    return [];
+  }
+  await addLabels({
+    owner: input.owner,
+    repo: input.repo,
+    issue_number: input.pullNumber,
+    labels: labelNames,
+  });
+  return labelNames;
+}
+
 async function listPaginated<T>(
   fetchPage: (page: number) => Promise<{ data: T[] } | undefined>,
 ): Promise<T[]> {
@@ -845,6 +1111,305 @@ async function listPaginated<T>(
       return items;
     }
   }
+}
+
+function mapPullRequestListItem(
+  pull: GitHubPullRequestListData,
+  context: {
+    checks: ReviewCheckStatus[];
+    changedFiles: ReviewChangedFile[] | null;
+  },
+): PullRequestListItem {
+  const labels = labelNames(pull.labels ?? []);
+  const title = pull.title ?? `Pull request #${pull.number}`;
+  const body = pull.body ?? "";
+  const headRef = pull.head?.ref ?? "head";
+  const additions =
+    pull.additions ??
+    context.changedFiles?.reduce((total, file) => total + file.additions, 0) ??
+    0;
+  const deletions =
+    pull.deletions ??
+    context.changedFiles?.reduce((total, file) => total + file.deletions, 0) ??
+    0;
+  const changedFileCount =
+    pull.changed_files ?? context.changedFiles?.length ?? 0;
+  const item = {
+    number: pull.number,
+    title,
+    bodyPreview: compactPreview(body, 180),
+    url: pull.html_url ?? null,
+    author: pull.user?.login ?? null,
+    state: pullRequestState(pull),
+    isDraft: pull.draft ?? null,
+    labels,
+    reviewers: reviewerNames(pull),
+    assignees: userNames(pull.assignees ?? []),
+    baseRef: pull.base?.ref ?? "base",
+    headRef,
+    headSha: pull.head?.sha ?? null,
+    createdAt: pull.created_at ?? null,
+    updatedAt: pull.updated_at ?? null,
+    comments: pull.comments ?? 0,
+    reviewComments: pull.review_comments ?? 0,
+    commits: pull.commits ?? 0,
+    changedFiles: changedFileCount,
+    additions,
+    deletions,
+    reviewDecision: null,
+    mergeable: mapMergeable(pull.mergeable),
+    mergeStateStatus: pull.mergeable_state ?? null,
+    checksSummary: summarizeChecks(context.checks),
+    attention: pullRequestAttention({
+      isDraft: pull.draft ?? null,
+      reviewDecision: null,
+      mergeable: mapMergeable(pull.mergeable),
+      mergeStateStatus: pull.mergeable_state ?? null,
+      checks: context.checks,
+    }),
+    unread: false,
+    triageTags: inferPullRequestTriageTags({
+      author: pull.user?.login ?? null,
+      body,
+      files: context.changedFiles,
+      headRef,
+      labels,
+      title,
+    }),
+  } satisfies PullRequestListItem;
+  return PullRequestListItemSchema.parse(item);
+}
+
+function pullRequestState(
+  pull: Pick<GitHubPullRequestListData, "state" | "merged_at">,
+): PullRequestListItem["state"] {
+  if (pull.merged_at) {
+    return "merged";
+  }
+  return pull.state === "closed" ? "closed" : "open";
+}
+
+function mapMergeable(value: boolean | null | undefined): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  return value ? "MERGEABLE" : "CONFLICTING";
+}
+
+function labelNames(
+  labels: Array<string | { name?: string | null }>,
+): string[] {
+  return labels
+    .map((label) => (typeof label === "string" ? label : label.name))
+    .filter((label): label is string => Boolean(label));
+}
+
+function userNames(users: Array<{ login?: string | null }>): string[] {
+  return users
+    .map((user) => user.login)
+    .filter((login): login is string => Boolean(login));
+}
+
+function reviewerNames(
+  pull: Pick<
+    GitHubPullRequestListData,
+    "requested_reviewers" | "requested_teams"
+  >,
+): string[] {
+  return [
+    ...userNames(pull.requested_reviewers ?? []),
+    ...(pull.requested_teams ?? [])
+      .map((team) => team.name)
+      .filter((name): name is string => Boolean(name)),
+  ];
+}
+
+function summarizeChecks(
+  checks: readonly ReviewCheckStatus[],
+): PullRequestListItem["checksSummary"] {
+  const summary = {
+    total: checks.length,
+    passing: 0,
+    failing: 0,
+    pending: 0,
+    skipped: 0,
+  };
+  for (const check of checks) {
+    const conclusion = (check.conclusion ?? check.status).toLowerCase();
+    if (["success", "neutral"].includes(conclusion)) {
+      summary.passing += 1;
+    } else if (
+      ["failure", "cancelled", "timed_out", "action_required"].includes(
+        conclusion,
+      )
+    ) {
+      summary.failing += 1;
+    } else if (["skipped"].includes(conclusion)) {
+      summary.skipped += 1;
+    } else {
+      summary.pending += 1;
+    }
+  }
+  return summary;
+}
+
+function pullRequestAttention(input: {
+  isDraft: boolean | null;
+  reviewDecision: string | null;
+  mergeable: string | null;
+  mergeStateStatus: string | null;
+  checks: readonly ReviewCheckStatus[];
+}): PullRequestListItem["attention"] {
+  if (input.isDraft) {
+    return "draft";
+  }
+  if (summarizeChecks(input.checks).failing > 0) {
+    return "checks_failed";
+  }
+  if (input.reviewDecision === "CHANGES_REQUESTED") {
+    return "changes_requested";
+  }
+  if (input.mergeable === "CONFLICTING" || input.mergeStateStatus === "DIRTY") {
+    return "conflicts";
+  }
+  if (input.reviewDecision === "REVIEW_REQUIRED") {
+    return "review_required";
+  }
+  return "none";
+}
+
+function mapPullRequestCommits(
+  commits: readonly GitHubPullRequestCommit[],
+): PullRequestCommit[] {
+  return commits.map((commit) => ({
+    sha: commit.sha,
+    message: commit.commit?.message?.split(/\r?\n/)[0] ?? null,
+    author: commit.author?.login ?? commit.commit?.author?.name ?? null,
+    authoredAt: commit.commit?.author?.date ?? null,
+    url: commit.html_url ?? null,
+  }));
+}
+
+function pullRequestTimeline(input: {
+  pull: GitHubPullRequestData;
+  issueComments: readonly GitHubIssueComment[];
+  reviewComments: readonly GitHubReviewComment[];
+  reviews: readonly GitHubPullRequestReview[];
+}): PullRequestTimelineItem[] {
+  const items: PullRequestTimelineItem[] = [
+    {
+      id: `opened-${input.pull.number}`,
+      kind: "opened",
+      author: input.pull.user?.login ?? null,
+      body: input.pull.body ?? "",
+      state: null,
+      path: null,
+      line: null,
+      url: input.pull.html_url ?? null,
+      createdAt: input.pull.created_at ?? null,
+      updatedAt: input.pull.updated_at ?? null,
+    },
+    ...input.issueComments.map((comment) => ({
+      id: `comment-${comment.id}`,
+      kind: "comment" as const,
+      author: comment.user?.login ?? null,
+      body: comment.body ?? "",
+      state: null,
+      path: null,
+      line: null,
+      url: comment.html_url ?? null,
+      createdAt: comment.created_at ?? null,
+      updatedAt: comment.updated_at ?? null,
+    })),
+    ...input.reviews.map((review) => ({
+      id: `review-${review.id}`,
+      kind: "review" as const,
+      author: review.user?.login ?? null,
+      body: review.body ?? "",
+      state: review.state ?? null,
+      path: null,
+      line: null,
+      url: review.html_url ?? null,
+      createdAt: review.submitted_at ?? null,
+      updatedAt: review.submitted_at ?? null,
+    })),
+    ...input.reviewComments.map((comment) => ({
+      id: `review-comment-${comment.id}`,
+      kind: "review_comment" as const,
+      author: comment.user?.login ?? null,
+      body: comment.body ?? "",
+      state: null,
+      path: comment.path ?? null,
+      line: comment.line ?? null,
+      url: comment.html_url ?? null,
+      createdAt: comment.created_at ?? null,
+      updatedAt: comment.updated_at ?? null,
+    })),
+  ];
+  return items.sort(
+    (left, right) =>
+      timestampForSort(left.createdAt) - timestampForSort(right.createdAt),
+  );
+}
+
+function filterPullRequests(
+  pullRequests: PullRequestListItem[],
+  search: string,
+): PullRequestListItem[] {
+  const query = search.trim().toLowerCase();
+  if (!query) {
+    return pullRequests;
+  }
+  return pullRequests.filter((pullRequest) =>
+    [
+      pullRequest.title,
+      pullRequest.author ?? "",
+      pullRequest.number.toString(),
+      pullRequest.labels.join(" "),
+      pullRequest.triageTags
+        .map((tag) => `${tag.label} ${tag.githubLabel}`)
+        .join(" "),
+      pullRequest.bodyPreview,
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(query),
+  );
+}
+
+function sortPullRequests(
+  pullRequests: PullRequestListItem[],
+  sort: "created" | "updated" | "number",
+  direction: "asc" | "desc",
+): PullRequestListItem[] {
+  const multiplier = direction === "asc" ? 1 : -1;
+  return [...pullRequests].sort((left, right) => {
+    if (sort === "number") {
+      return (left.number - right.number) * multiplier;
+    }
+    const leftValue = timestampForSort(
+      sort === "created" ? left.createdAt : left.updatedAt,
+    );
+    const rightValue = timestampForSort(
+      sort === "created" ? right.createdAt : right.updatedAt,
+    );
+    return (leftValue - rightValue) * multiplier;
+  });
+}
+
+function timestampForSort(value: string | null): number {
+  if (!value) {
+    return 0;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function compactPreview(value: string, maxLength: number): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length <= maxLength
+    ? compact
+    : `${compact.slice(0, maxLength - 3)}...`;
 }
 
 function boundedReviewFiles(
@@ -1345,6 +1910,15 @@ function isNotFoundError(error: unknown): boolean {
     error !== null &&
     "status" in error &&
     error.status === 404
+  );
+}
+
+function isAlreadyExistsGitHubError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    error.status === 422
   );
 }
 

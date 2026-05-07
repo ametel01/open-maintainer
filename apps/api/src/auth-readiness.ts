@@ -21,16 +21,24 @@ export type AuthReadinessCommandRunner = (input: {
   args: string[];
 }) => Promise<void>;
 
+export type ModelAuthProvider = "codex" | "claude";
+
 export type AuthReadinessChecker = () => Promise<AuthReadiness>;
 
 export function createAuthReadinessChecker(
   input: {
     runCommand?: AuthReadinessCommandRunner;
     cwd?: string;
+    requiredModelAuthProviders?: ReadonlySet<ModelAuthProvider>;
   } = {},
 ): AuthReadinessChecker {
   const runCommand = input.runCommand ?? defaultAuthReadinessCommandRunner;
   const configuredCwd = input.cwd;
+  const requiredModelAuthProviders =
+    input.requiredModelAuthProviders ??
+    requiredModelAuthProvidersFromEnv(authReadinessEnvironmentProviderConfig());
+  const codexAuthRequired = requiredModelAuthProviders.has("codex");
+  const claudeAuthRequired = requiredModelAuthProviders.has("claude");
 
   return async () => {
     const authCheckCwd =
@@ -39,8 +47,12 @@ export function createAuthReadinessChecker(
     try {
       const [ghAuth, codexAuth, claudeAuth] = await Promise.all([
         checkGhAuthentication(runCommand),
-        checkCodexAuthentication(authCheckCwd),
-        checkClaudeAuthentication(authCheckCwd),
+        codexAuthRequired
+          ? checkCodexAuthentication(authCheckCwd)
+          : Promise.resolve(skippedAuthStatus()),
+        claudeAuthRequired
+          ? checkClaudeAuthentication(authCheckCwd)
+          : Promise.resolve(skippedAuthStatus()),
       ]);
 
       const checkedAt = nowIso();
@@ -50,8 +62,8 @@ export function createAuthReadinessChecker(
         claudeAuth,
         authReady:
           ghAuth.status === "ok" &&
-          codexAuth.status === "ok" &&
-          claudeAuth.status === "ok",
+          modelAuthReady(codexAuth, codexAuthRequired) &&
+          modelAuthReady(claudeAuth, claudeAuthRequired),
         checkedAt,
       };
     } finally {
@@ -64,6 +76,67 @@ export function createAuthReadinessChecker(
 
 export function strictStartupAuthEnabled(value: string | undefined): boolean {
   return value?.trim().toLowerCase() === "true";
+}
+
+function authReadinessEnvironmentProviderConfig(): {
+  requiredModelCliAuth?: string;
+  requireClaudeAuth?: string;
+} {
+  const config: {
+    requiredModelCliAuth?: string;
+    requireClaudeAuth?: string;
+  } = {};
+  const requiredModelCliAuth =
+    process.env["OPEN_MAINTAINER_REQUIRED_MODEL_CLI_AUTH"];
+  const requireClaudeAuth = process.env["OPEN_MAINTAINER_REQUIRE_CLAUDE_AUTH"];
+  if (requiredModelCliAuth !== undefined) {
+    config.requiredModelCliAuth = requiredModelCliAuth;
+  }
+  if (requireClaudeAuth !== undefined) {
+    config.requireClaudeAuth = requireClaudeAuth;
+  }
+  return config;
+}
+
+export function requiredModelAuthProvidersFromEnv(input: {
+  requiredModelCliAuth?: string;
+  requireClaudeAuth?: string;
+}): ReadonlySet<ModelAuthProvider> {
+  const providers = new Set<ModelAuthProvider>();
+  const normalized = input.requiredModelCliAuth?.trim().toLowerCase();
+
+  if (!normalized || normalized === "default") {
+    providers.add("codex");
+  } else {
+    const tokens = normalized.split(/[,\s]+/).filter(Boolean);
+    for (const token of tokens) {
+      if (token === "none") {
+        providers.clear();
+        continue;
+      }
+      if (token === "both" || token === "all") {
+        providers.add("codex");
+        providers.add("claude");
+        continue;
+      }
+      if (token === "codex" || token === "codex-cli") {
+        providers.add("codex");
+        continue;
+      }
+      if (token === "claude" || token === "claude-cli") {
+        providers.add("claude");
+      }
+    }
+    if (providers.size === 0 && normalized !== "none") {
+      providers.add("codex");
+    }
+  }
+
+  if (input.requireClaudeAuth?.trim().toLowerCase() === "true") {
+    providers.add("claude");
+  }
+
+  return providers;
 }
 
 async function checkGhAuthentication(
@@ -127,6 +200,14 @@ async function checkClaudeAuthentication(cwd: string): Promise<AuthToolStatus> {
       checkedAt,
     };
   }
+}
+
+function skippedAuthStatus(): AuthToolStatus {
+  return { status: "skipped", error: null, checkedAt: nowIso() };
+}
+
+function modelAuthReady(status: AuthToolStatus, required: boolean): boolean {
+  return required ? status.status === "ok" : status.status !== "missing";
 }
 
 async function defaultAuthReadinessCommandRunner(input: {

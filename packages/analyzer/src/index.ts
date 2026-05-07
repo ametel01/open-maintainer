@@ -1635,6 +1635,7 @@ function detectEnvironmentVariables(files: AnalyzerFile[]): string[] {
   const variables = new Set<string>();
   const patterns = [
     /\bprocess\.env\.([A-Z][A-Z0-9_]*)\b/g,
+    /\bprocess\.env\s*\[\s*["']([A-Z][A-Z0-9_]*)["']\s*\]/g,
     /\bDeno\.env\.get\(["']([A-Z][A-Z0-9_]*)["']\)/g,
     /\bimport\.meta\.env\.([A-Z][A-Z0-9_]*)\b/g,
   ];
@@ -1649,8 +1650,28 @@ function detectEnvironmentVariables(files: AnalyzerFile[]): string[] {
     for (const variable of detectShellEnvironmentVariables(file.content)) {
       variables.add(variable);
     }
+    if (
+      environmentFilePatterns.some((pattern) =>
+        pattern.test(path.posix.basename(file.path)),
+      )
+    ) {
+      for (const variable of detectEnvironmentFileVariables(file.content)) {
+        variables.add(variable);
+      }
+    }
   }
   return [...variables].sort();
+}
+
+function detectEnvironmentFileVariables(content: string): string[] {
+  const variables = new Set<string>();
+  for (const line of content.split(/\r?\n/)) {
+    const match = line.trim().match(/^(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=/);
+    if (match?.[1]) {
+      variables.add(match[1]);
+    }
+  }
+  return [...variables];
 }
 
 function detectShellEnvironmentVariables(content: string): string[] {

@@ -6,7 +6,15 @@ export function redirectToDashboard(
   request: NextRequest,
   params: Record<string, string>,
 ): NextResponse {
-  const url = new URL("/", dashboardOrigin(request));
+  return redirectToDashboardRoute(request, "/", params);
+}
+
+export function redirectToDashboardRoute(
+  request: NextRequest,
+  pathname: string,
+  params: Record<string, string>,
+): NextResponse {
+  const url = new URL(pathname, dashboardOrigin(request));
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, safeDashboardParam(value));
   }

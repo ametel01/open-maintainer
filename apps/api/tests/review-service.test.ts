@@ -78,6 +78,8 @@ describe("dashboard review service", () => {
       commands.push({ tool: input.tool, args: input.args, cwd: input.cwd });
       return JSON.stringify({
         baseRefName: "HEAD~1",
+        headRefName: "HEAD",
+        headRefOid: "head-sha",
         title: "Review service PR",
         body: "Validation: bun test",
         url: "https://github.com/acme/review-tool/pull/7",
@@ -119,7 +121,7 @@ describe("dashboard review service", () => {
             "view",
             "7",
             "--json",
-            "baseRefName,title,body,url,author,isDraft,mergeable,mergeStateStatus,reviewDecision",
+            "baseRefName,headRefName,headRefOid,title,body,url,author,isDraft,mergeable,mergeStateStatus,reviewDecision",
           ],
         },
       ]);

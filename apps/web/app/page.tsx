@@ -5,6 +5,10 @@ import type {
 } from "@open-maintainer/shared";
 import { LocalRepoPicker } from "./LocalRepoPicker";
 import {
+  contextDashboardHref,
+  pullRequestsDashboardHref,
+} from "./dashboard-navigation";
+import {
   type RunWithContext,
   type SearchParams,
   findPrUrl,
@@ -45,9 +49,20 @@ export default async function Dashboard({ searchParams }: DashboardProps) {
             <p className="muted">Self-hosted context PR workflow</p>
             <h1>Open Maintainer</h1>
           </div>
-          <span className={health?.status === "ok" ? "badge" : "badge warn"}>
-            {health?.status ?? "setup needed"}
-          </span>
+          <div className="topbar-actions">
+            <a
+              className="repo-link"
+              href={pullRequestsDashboardHref({
+                providerId: selectedProvider?.id ?? null,
+                repoId: repo?.id ?? null,
+              })}
+            >
+              Pull Requests
+            </a>
+            <span className={health?.status === "ok" ? "badge" : "badge warn"}>
+              {health?.status ?? "setup needed"}
+            </span>
+          </div>
         </header>
 
         <section className="grid" aria-label="Service health">
@@ -84,7 +99,10 @@ export default async function Dashboard({ searchParams }: DashboardProps) {
                         ? "repo-link active"
                         : "repo-link"
                     }
-                    href={`/?repo=${encodeURIComponent(installedRepo.id)}`}
+                    href={contextDashboardHref({
+                      providerId: selectedProvider?.id ?? null,
+                      repoId: installedRepo.id,
+                    })}
                     key={installedRepo.id}
                   >
                     {installedRepo.fullName}
@@ -1020,7 +1038,7 @@ function authReadinessMessage(authReadiness: AuthReadiness | null): string {
 }
 
 function authToolMessage(label: string, tool: AuthReadiness["ghAuth"]): string {
-  if (tool.status === "ok") {
+  if (tool.status === "ok" || tool.status === "skipped") {
     return "";
   }
   return tool.error ? `${label}: ${tool.error}` : `${label}: auth missing`;

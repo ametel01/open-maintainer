@@ -9,7 +9,10 @@ import {
   RepoProfileSchema,
   ReviewContributionTriageSchema,
   ReviewFeedbackSchema,
+  inferPullRequestTriageTags,
   nowIso,
+  reviewTriageLabelDefinitions,
+  reviewTriageLabelNames,
 } from "../src";
 
 describe("shared schemas", () => {
@@ -110,6 +113,12 @@ describe("shared schemas", () => {
     });
 
     expect(evaluated.category).toBe("needs_author_input");
+    expect(reviewTriageLabelDefinitions[evaluated.category].name).toBe(
+      "open-maintainer/needs-author-input",
+    );
+    expect(reviewTriageLabelNames.has("open-maintainer/ready-for-review")).toBe(
+      true,
+    );
     expect(
       ReviewContributionTriageSchema.parse(NotEvaluatedContributionTriage)
         .status,
@@ -130,6 +139,22 @@ describe("shared schemas", () => {
         category: "ready_for_review",
       }),
     ).toThrow();
+  });
+
+  it("infers automatic PR triage tags for LLM-authored context PRs", () => {
+    expect(
+      inferPullRequestTriageTags({
+        author: "codex",
+        title: "Open Maintainer Context Update",
+        body: "This PR writes generated Open Maintainer context artifacts for review.",
+        files: [{ path: "AGENTS.md" }],
+        headRef: "open-maintainer/context-2",
+        labels: [],
+      }).map((tag) => tag.githubLabel),
+    ).toEqual([
+      "open-maintainer/llm-authored",
+      "open-maintainer/context-update",
+    ]);
   });
 
   it("validates issue triage model results and rejects unknown categories", () => {

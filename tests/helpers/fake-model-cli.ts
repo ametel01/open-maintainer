@@ -31,7 +31,9 @@ const repeated = "Use repository evidence, run the detected validation command, 
 let promptText = "";
 let output;
 
-if (schema.required.includes("classification")) {
+if (schema.required.includes("pullRequests")) {
+  output = { pullRequests: [] };
+} else if (schema.required.includes("classification")) {
   if (process.env["OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE"] === "invalid-json") {
     output = "not an issue triage object";
   } else {
@@ -151,6 +153,22 @@ process.stdin.on("data", (chunk) => {
   promptText += chunk.toString();
 });
 process.stdin.on("end", () => {
+  if (schema.required.includes("pullRequests")) {
+    const numbers = [
+      ...new Set(
+        [...promptText.matchAll(/"number":\\s*(\\d+)/g)].map((match) =>
+          Number(match[1]),
+        ),
+      ),
+    ].filter((number) => Number.isInteger(number) && number > 0);
+    output = {
+      pullRequests: numbers.map((number) => ({
+        number,
+        labels: ["open-maintainer/llm-authored"],
+        reason: "Synthetic fake provider detected LLM authorship evidence.",
+      })),
+    };
+  }
   if (
     schema.required.includes("classification") &&
     process.env["OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE"] === "mixed"
