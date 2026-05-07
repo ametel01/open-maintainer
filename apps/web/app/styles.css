@@ -675,7 +675,9 @@ th {
 .pr-list-kicker,
 .pr-list-context,
 .pr-list-labels,
-.pr-auto-tags {
+.pr-auto-tags,
+.pr-header-labels,
+.metadata-chip-list {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -765,6 +767,10 @@ th {
   font-size: 13px;
 }
 
+.pr-header-labels {
+  margin-top: 10px;
+}
+
 .pr-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -829,8 +835,108 @@ th {
 }
 
 .timeline-body {
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.markdown-body {
+  display: grid;
+  gap: 8px;
+  color: #17201b;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.markdown-body > * {
+  margin: 0;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  color: #17201b;
+  line-height: 1.25;
+}
+
+.markdown-body h1 {
+  font-size: 22px;
+}
+
+.markdown-body h2 {
+  font-size: 19px;
+}
+
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  font-size: 16px;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  display: grid;
+  gap: 4px;
+  padding-left: 22px;
+}
+
+.markdown-body blockquote {
+  border-left: 3px solid #d8ded6;
+  color: #506258;
+  padding-left: 12px;
+}
+
+.markdown-body hr {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid #e2e6df;
+}
+
+.markdown-body a {
+  color: #136c36;
+  font-weight: 700;
+}
+
+.markdown-body code {
+  border-radius: 6px;
+  background: #eef2ee;
+  padding: 1px 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", monospace;
+  font-size: 0.92em;
+}
+
+.markdown-code-block {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid #d8ded6;
+  border-radius: 8px;
+  background: #f6f8f5;
+  padding: 10px;
+}
+
+.markdown-code-block code {
+  display: block;
+  background: transparent;
+  padding: 0;
+  white-space: pre;
+}
+
+.markdown-task-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.markdown-task-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.markdown-task-item input {
+  margin-top: 4px;
 }
 
 .diff-summary {

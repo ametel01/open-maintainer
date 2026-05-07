@@ -12,6 +12,8 @@ import {
   shouldAlwaysSkipRepositoryUploadPath,
   shouldReadRepositoryUploadPath,
 } from "@open-maintainer/shared";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { createDashboardApiClient } from "../apps/web/app/dashboard-api";
 import {
@@ -25,6 +27,10 @@ import {
   pullRequestsDashboardHref,
 } from "../apps/web/app/dashboard-navigation";
 import { loadDashboardViewModel } from "../apps/web/app/dashboard-view-model";
+import {
+  LabelChips,
+  MarkdownBody,
+} from "../apps/web/app/pull-requests/display";
 import { triageDraftMarkdown } from "../apps/web/app/pull-requests/draft-markdown";
 import { loadPullRequestsViewModel } from "../apps/web/app/pull-requests/pr-view-model";
 
@@ -165,6 +171,38 @@ describe("pull request draft markdown", () => {
     expect(markdown).not.toContain("GitHub Label Actions");
     expect(markdown).not.toContain("### Missing Information");
     expect(markdown).not.toContain("Maintainer action:");
+  });
+});
+
+describe("pull request dashboard display", () => {
+  it("renders existing PR labels as visible chips", () => {
+    const html = renderToStaticMarkup(
+      createElement(LabelChips, {
+        ariaLabel: "Labels for PR #52",
+        labels: ["dashboard", "open-maintainer/llm-authored"],
+      }),
+    );
+
+    expect(html).toContain('aria-label="Labels for PR #52"');
+    expect(html).toContain("dashboard");
+    expect(html).toContain("open-maintainer/llm-authored");
+    expect(html).toContain("pr-label");
+  });
+
+  it("renders PR body markdown without trusting raw HTML", () => {
+    const html = renderToStaticMarkup(
+      createElement(MarkdownBody, {
+        value:
+          "## Summary\n\n- Adds dashboard labels\n- Formats PR body\n\n`safe code`\n\n[Docs](https://example.com/docs)\n\n<script>alert(1)</script>",
+      }),
+    );
+
+    expect(html).toContain("<h2>Summary</h2>");
+    expect(html).toContain("<li><span>Adds dashboard labels</span></li>");
+    expect(html).toContain("<code>safe code</code>");
+    expect(html).toContain('href="https://example.com/docs"');
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
   });
 });
 

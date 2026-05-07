@@ -13,6 +13,7 @@ import type { SearchParams } from "../dashboard-view-model";
 import { BatchTriageControls } from "./BatchTriageControls";
 import { DraftActionForm } from "./DraftActionForm";
 import { PullRequestKeyboardNav } from "./PullRequestKeyboardNav";
+import { LabelChips, MarkdownBody } from "./display";
 import { reviewDraftMarkdown, triageDraftMarkdown } from "./draft-markdown";
 import {
   type PullRequestTab,
@@ -411,20 +412,12 @@ function PullRequestList({
                   {pullRequest.baseRef}...{pullRequest.headRef}
                 </span>
               </div>
-              {pullRequest.labels.length ? (
-                <div className="pr-list-labels" aria-label="Labels">
-                  {pullRequest.labels.slice(0, 3).map((label) => (
-                    <span className="badge subtle pr-label" key={label}>
-                      {label}
-                    </span>
-                  ))}
-                  {pullRequest.labels.length > 3 ? (
-                    <span className="badge subtle pr-label">
-                      +{pullRequest.labels.length - 3}
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
+              <LabelChips
+                ariaLabel={`Labels for PR #${pullRequest.number}`}
+                className="pr-list-labels"
+                labels={pullRequest.labels}
+                limit={4}
+              />
               <TriageTags tags={pullRequest.triageTags} />
             </div>
             <div className="pr-list-status">
@@ -526,6 +519,11 @@ function PullRequestDetailHeader({
           <span>{summary.changedFiles} files</span>
           <span>{commentsLabel(summary)}</span>
         </div>
+        <LabelChips
+          ariaLabel={`Labels for PR #${summary.number}`}
+          className="pr-header-labels"
+          labels={summary.labels}
+        />
       </div>
       <div className="pr-header-badges">
         <span className={stateClass(summary.state)}>{summary.state}</span>
@@ -644,7 +642,9 @@ function TimelineItem({ item }: { item: PullRequestTimelineItem }) {
           {item.line ? `:${item.line}` : ""}
         </p>
       ) : null}
-      {item.body ? <p className="timeline-body">{item.body}</p> : null}
+      {item.body ? (
+        <MarkdownBody className="timeline-body" value={item.body} />
+      ) : null}
     </article>
   );
 }
@@ -858,11 +858,11 @@ function MetadataPanel({ pullRequest }: { pullRequest: PullRequestDetail }) {
         value={summary.mergeStateStatus ?? "unknown"}
       />
       <MetadataItem label="Checks" value={checksLabel(summary)} />
-      <MetadataList
+      <MetadataChipList
         label="Automatic triage"
         values={summary.triageTags.map((tag) => tag.githubLabel)}
       />
-      <MetadataList label="Labels" values={summary.labels} />
+      <MetadataChipList label="Labels" values={summary.labels} />
       <MetadataList label="Reviewers" values={summary.reviewers} />
       <MetadataList label="Assignees" values={summary.assignees} />
       <div>
@@ -897,6 +897,26 @@ function MetadataList({ label, values }: { label: string; values: string[] }) {
     <div>
       <h3>{label}</h3>
       <p className="muted">{values.length ? values.join(", ") : "none"}</p>
+    </div>
+  );
+}
+
+function MetadataChipList({
+  label,
+  values,
+}: {
+  label: string;
+  values: string[];
+}) {
+  return (
+    <div>
+      <h3>{label}</h3>
+      <LabelChips
+        ariaLabel={label}
+        className="metadata-chip-list"
+        emptyLabel="none"
+        labels={values}
+      />
     </div>
   );
 }
