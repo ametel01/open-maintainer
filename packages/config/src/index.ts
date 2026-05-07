@@ -51,7 +51,7 @@ export const OpenMaintainerConfigSchema = z.object({
               "closed",
               "security",
             ]),
-          maxIssues: z.number().int().positive().max(100).default(100),
+          maxIssues: z.number().int().positive().max(100).default(50),
         })
         .default({}),
       comments: z
