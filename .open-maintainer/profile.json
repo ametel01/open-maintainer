@@ -1,13 +1,11 @@
 {
-  "id": "repo_profile_432ffb5a-cab4-4e2a-bf13-9bb2e5ad8189",
+  "id": "repo_profile_17402e95-c5fc-4e06-a5a7-6a3162e1f481",
   "repoId": "local",
   "version": 1,
   "owner": "Open-Maintainer",
   "name": "open-maintainer",
   "defaultBranch": "main",
-  "primaryLanguages": [
-    "TypeScript"
-  ],
+  "primaryLanguages": ["TypeScript"],
   "frameworks": [
     "next",
     "react",
@@ -265,36 +263,76 @@
   "detectedRiskAreas": [
     "Authentication, secret, payment, or security-sensitive paths are present."
   ],
-  "riskHintPaths": [
-    "apps/api/src/auth-readiness.ts",
-    "SECURITY.md"
-  ],
+  "riskHintPaths": ["apps/api/src/auth-readiness.ts", "SECURITY.md"],
   "ownershipHints": [],
   "environmentFiles": [
     ".env.example",
     "tests/fixtures/high-readiness-ts/.env.example"
   ],
   "environmentVariables": [
+    "API_BASE_URL",
+    "API_PORT",
     "APP_ENV",
     "AUDIT_EXIT_CODE",
     "AUDIT_OUTPUT_PATH",
     "BASE_READINESS_SCORE",
+    "DATABASE_URL",
     "DOCTOR_EXIT_CODE",
     "DOCTOR_OUTPUT_PATH",
     "DRIFT_DETECTED",
+    "ENCRYPTION_KEY",
     "EVENT_NAME",
     "GH_TOKEN",
+    "GITHUB_APP_ID",
+    "GITHUB_CLIENT_ID",
+    "GITHUB_CLIENT_SECRET",
+    "GITHUB_PRIVATE_KEY_BASE64",
+    "GITHUB_TOKEN",
+    "GITHUB_WEBHOOK_SECRET",
+    "GIT_AUTHOR_EMAIL",
+    "GIT_AUTHOR_NAME",
     "HOME",
     "MODE",
+    "NEXT_PUBLIC_API_BASE_URL",
+    "NODE_ENV",
+    "NO_COLOR",
+    "OPENAI_COMPATIBLE_BASE_URL",
+    "OPENAI_COMPATIBLE_MODEL",
+    "OPEN_MAINTAINER_CLAUDE_COMMAND",
     "OPEN_MAINTAINER_CLAUDE_MODEL",
+    "OPEN_MAINTAINER_CODEX_COMMAND",
     "OPEN_MAINTAINER_CODEX_MODEL",
+    "OPEN_MAINTAINER_DASHBOARD_REPO_ROOT",
+    "OPEN_MAINTAINER_DASHBOARD_REPO_ROOTS",
+    "OPEN_MAINTAINER_FAKE_CODEX_FINDING",
+    "OPEN_MAINTAINER_FAKE_CODEX_ISSUE_TRIAGE",
+    "OPEN_MAINTAINER_FAKE_EXISTING_TRIAGE_COMMENT",
+    "OPEN_MAINTAINER_FAKE_GH_CALLS",
+    "OPEN_MAINTAINER_FAKE_GH_COMMENT_FAIL",
+    "OPEN_MAINTAINER_FAKE_GH_LABELLED_FIRST_PAGE",
+    "OPEN_MAINTAINER_FAKE_GH_LABEL_APPLY_FAIL",
+    "OPEN_MAINTAINER_FAKE_GH_LABEL_LOG",
+    "OPEN_MAINTAINER_FAKE_GH_REJECT_ENV_TOKEN",
+    "OPEN_MAINTAINER_FAKE_ISSUE_42_UPDATED_AT",
+    "OPEN_MAINTAINER_FORCE_COLOR",
+    "OPEN_MAINTAINER_GH_COMMAND",
     "OPEN_MAINTAINER_GIT_AUTHOR_EMAIL",
     "OPEN_MAINTAINER_GIT_AUTHOR_NAME",
+    "OPEN_MAINTAINER_GIT_COMMAND",
+    "OPEN_MAINTAINER_LOCAL_REPO_CACHE",
+    "OPEN_MAINTAINER_NO_COLOR",
+    "OPEN_MAINTAINER_REMOTE_ARTIFACT_ROOT",
+    "OPEN_MAINTAINER_REQUIRED_MODEL_CLI_AUTH",
+    "OPEN_MAINTAINER_REQUIRE_CLAUDE_AUTH",
     "OPEN_MAINTAINER_REVIEW_SUMMARY_MARKER",
+    "OPEN_MAINTAINER_STRICT_STARTUP_AUTH",
+    "PATH",
     "READINESS_SCORE",
+    "REDIS_URL",
     "REPORT_PATH",
     "RUNNER_TEMP",
     "SUMMARY_PATH",
+    "WEB_BASE_URL",
     "WEB_PORT"
   ],
   "ignoreFiles": [
@@ -964,9 +1002,7 @@
       "reason": "detected repository context"
     }
   ],
-  "workspaceManifests": [
-    "package.json"
-  ],
+  "workspaceManifests": ["package.json"],
   "lockfiles": [
     "bun.lock",
     "tests/fixtures/high-readiness-ts/bun.lock",
@@ -1034,7 +1070,7 @@
     },
     {
       "path": ".env.example",
-      "hash": "1dac7d2d5151446e"
+      "hash": "3341697043c79e53"
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -1066,11 +1102,11 @@
     },
     {
       "path": ".open-maintainer/profile.json",
-      "hash": "44c8fe677e366b7f"
+      "hash": "aeefe21e9fe96a2c"
     },
     {
       "path": ".open-maintainer/report.md",
-      "hash": "d0db38047e16c64d"
+      "hash": "1fd1b2d4b271176b"
     },
     {
       "path": "AGENTS.md",
@@ -1082,11 +1118,11 @@
     },
     {
       "path": "apps/api/src/auth-readiness.ts",
-      "hash": "6583b3d22af3b178"
+      "hash": "63551a6e6d20de58"
     },
     {
       "path": "apps/api/tests/api.test.ts",
-      "hash": "816da5c12f34d966"
+      "hash": "68fdb84ad5942f1f"
     },
     {
       "path": "apps/api/tests/context-pr-service.test.ts",
@@ -1098,7 +1134,7 @@
     },
     {
       "path": "apps/api/tests/review-service.test.ts",
-      "hash": "05ebd9555ecc81e9"
+      "hash": "45cb1d7635594c4f"
     },
     {
       "path": "apps/api/tsconfig.json",
@@ -1146,7 +1182,7 @@
     },
     {
       "path": "docker-compose.yml",
-      "hash": "c881b47002842a3e"
+      "hash": "a17014a83130457f"
     },
     {
       "path": "docs/DEMO_RUNBOOK.md",
@@ -1234,7 +1270,7 @@
     },
     {
       "path": "packages/github/tests/webhook.test.ts",
-      "hash": "06477dace380c072"
+      "hash": "e72385145f5b9714"
     },
     {
       "path": "packages/github/tsconfig.json",
@@ -1286,7 +1322,7 @@
     },
     {
       "path": "packages/shared/tests/schemas.test.ts",
-      "hash": "58399099683d8f49"
+      "hash": "0dc301baecf62c29"
     },
     {
       "path": "packages/shared/tsconfig.json",
@@ -1306,7 +1342,7 @@
     },
     {
       "path": "README.md",
-      "hash": "714905e6e6e03ee8"
+      "hash": "7eb346f5c2cb1386"
     },
     {
       "path": "SECURITY.md",
@@ -1346,7 +1382,7 @@
     },
     {
       "path": "tests/dashboard-contracts.test.ts",
-      "hash": "7006671f19e4ae0d"
+      "hash": "2e800b58bb14de91"
     },
     {
       "path": "tests/fixtures/high-readiness-ts/.agents/skills/high-readiness-ts-pr-review/SKILL.md",
@@ -1494,7 +1530,7 @@
     },
     {
       "path": "tests/helpers/fake-model-cli.ts",
-      "hash": "21a97bc9ac380c80"
+      "hash": "6689b8b0956bfab9"
     },
     {
       "path": "tests/helpers/git-url.ts",
@@ -1526,7 +1562,7 @@
     },
     {
       "path": "tests/web-dashboard-api.test.ts",
-      "hash": "35ba51f320793c76"
+      "hash": "3bb3c62cd28acd6b"
     },
     {
       "path": "tests/web-redirect.test.ts",
@@ -1542,7 +1578,7 @@
     }
   ],
   "contextArtifactHashes": [],
-  "createdAt": "2026-05-06T00:53:49.230Z",
+  "createdAt": "2026-05-07T05:36:24.111Z",
   "agentReadiness": {
     "score": 100,
     "categories": [
@@ -2872,7 +2908,7 @@
       }
     ],
     "missingItems": [],
-    "generatedAt": "2026-05-06T00:53:49.231Z"
+    "generatedAt": "2026-05-07T05:36:24.111Z"
   },
-  "openMaintainerProfileHash": "9b10118094becae9"
+  "openMaintainerProfileHash": "7834102aea052af0"
 }

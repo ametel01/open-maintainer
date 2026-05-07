@@ -353,8 +353,9 @@ Agent Readiness: 100/100
 
 ## Drift
 
-- Lockfiles and config: biome.json was changed. Evidence: biome.json. Next action: review setup and validation context for the changed file.
-- Lockfiles and config: tsconfig.base.json was changed. Evidence: tsconfig.base.json. Next action: review setup and validation context for the changed file.
+- Documentation: README.md was changed. Evidence: README.md. Next action: review generated context against the changed docs.
+- Lockfiles and config: docker-compose.yml was changed. Evidence: docker-compose.yml. Next action: review setup and validation context for the changed file.
+- Risk paths: apps/api/src/auth-readiness.ts was changed. Evidence: apps/api/src/auth-readiness.ts. Next action: inspect the changed risk path and update high-risk guidance if needed.
 
 ## Commands
 
