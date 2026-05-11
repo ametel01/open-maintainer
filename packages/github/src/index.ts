@@ -620,8 +620,8 @@ export function verifyWebhookSignature(options: {
 }): boolean {
   const expected = `sha256=${createHmac("sha256", options.secret).update(options.payload).digest("hex")}`;
   const actual = options.signature256;
-  const expectedBuffer = Buffer.from(expected);
-  const actualBuffer = Buffer.from(actual);
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  const actualBuffer = Buffer.from(actual, "utf8");
   return (
     expectedBuffer.length === actualBuffer.length &&
     timingSafeEqual(expectedBuffer, actualBuffer)
